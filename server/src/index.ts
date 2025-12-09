@@ -1,12 +1,18 @@
 import express from 'express';
 import cors from 'cors';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { initializeDatabase } from './db/index.js';
 import configurationsRouter from './routes/configurations.js';
 import sessionsRouter from './routes/sessions.js';
 import eventsRouter from './routes/events.js';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
 const app = express();
 const PORT = process.env.PORT || 3000;
+const isProd = process.env.NODE_ENV === 'production';
 
 // Initialize database
 initializeDatabase();
@@ -32,10 +38,21 @@ app.use('/api/configurations', configurationsRouter);
 app.use('/api/sessions', sessionsRouter);
 app.use('/api/events', eventsRouter);
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ error: 'Not found' });
-});
+// Serve static files in production
+if (isProd) {
+  const clientDist = join(__dirname, '../../client/dist');
+  app.use(express.static(clientDist));
+  
+  // SPA fallback - serve index.html for all non-API routes
+  app.get('*', (req, res) => {
+    res.sendFile(join(clientDist, 'index.html'));
+  });
+} else {
+  // 404 handler for development
+  app.use((req, res) => {
+    res.status(404).json({ error: 'Not found' });
+  });
+}
 
 // Error handler
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
