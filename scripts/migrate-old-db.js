@@ -46,8 +46,31 @@ try {
   `);
 
   for (const config of oldConfigs) {
+    // Transform old config field names to new schema
+    let configJson;
+    try {
+      const oldConfig = JSON.parse(config.config);
+      configJson = JSON.stringify({
+        pointsLimit: oldConfig.moneyLimit ?? oldConfig.pointsLimit,
+        sessionLimit: oldConfig.timeLimit ?? oldConfig.sessionLimit,
+        endAtLimit: oldConfig.continueAfterMoneyLimit === 'on' ? false : (oldConfig.endAtLimit ?? true),
+        buttonActive: oldConfig.buttonActive,
+        leftButtonShape: oldConfig.leftButtonShape,
+        leftButtonColor: oldConfig.leftButtonColor,
+        middleButtonShape: oldConfig.middleButtonShape,
+        middleButtonColor: oldConfig.middleButtonColor,
+        rightButtonShape: oldConfig.rightButtonShape,
+        rightButtonColor: oldConfig.rightButtonColor,
+        pointsAwarded: oldConfig.moneyAwarded ?? oldConfig.pointsAwarded,
+        clicksNeeded: oldConfig.awardInterval ?? oldConfig.clicksNeeded,
+        startingPoints: oldConfig.startingMoney ?? oldConfig.startingPoints,
+      });
+    } catch {
+      configJson = config.config; // Keep original if parsing fails
+    }
+    
     // Use configId as name since old schema didn't have name
-    insertConfig.run(config.configId, config.configId, config.config);
+    insertConfig.run(config.configId, config.configId, configJson);
     console.log(`  Migrated config: ${config.configId}`);
   }
 
