@@ -18,10 +18,11 @@ router.post('/', (req, res) => {
     const result = LogEventSchema.safeParse(req.body);
     
     if (!result.success) {
-      return res.status(400).json({ 
+      res.status(400).json({ 
         error: 'Invalid event data',
         details: result.error.flatten(),
       });
+      return;
     }
 
     const { sessionId, event, value } = result.data;
@@ -30,7 +31,8 @@ router.post('/', (req, res) => {
     // Verify session exists
     const session = statements.getSession.get(sessionId);
     if (!session) {
-      return res.status(404).json({ error: 'Session not found' });
+      res.status(404).json({ error: 'Session not found' });
+      return;
     }
 
     statements.insertEvent.run(

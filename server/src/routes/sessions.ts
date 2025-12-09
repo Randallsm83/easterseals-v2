@@ -10,7 +10,7 @@ const StartSessionSchema = z.object({
 });
 
 // Get all sessions
-router.get('/', (req, res) => {
+router.get('/', (_req, res) => {
   try {
     const sessions = statements.getAllSessions.all();
     
@@ -61,7 +61,8 @@ router.get('/:sessionId/data', (req, res) => {
     const session = statements.getSession.get(sessionId) as any;
     console.log('Session found:', session);
     if (!session) {
-      return res.status(404).json({ error: 'Session not found' });
+      res.status(404).json({ error: 'Session not found' });
+      return;
     }
 
     const sessionConfig = JSON.parse(session.config);
@@ -121,10 +122,11 @@ router.post('/start', (req, res) => {
     const result = StartSessionSchema.safeParse(req.body);
     
     if (!result.success) {
-      return res.status(400).json({ 
+      res.status(400).json({ 
         error: 'Invalid session data',
         details: result.error.flatten(),
       });
+      return;
     }
 
     const { sessionId, configId } = result.data;
@@ -132,13 +134,15 @@ router.post('/start', (req, res) => {
     // Check if session already exists
     const existing = statements.getSession.get(sessionId);
     if (existing) {
-      return res.status(409).json({ error: 'Session ID already exists' });
+      res.status(409).json({ error: 'Session ID already exists' });
+      return;
     }
 
     // Check if config exists
-    const config = statements.getConfig.get(configId);
+    const config = statements.getConfig.get(configId) as { config: string } | undefined;
     if (!config) {
-      return res.status(404).json({ error: 'Configuration not found' });
+      res.status(404).json({ error: 'Configuration not found' });
+      return;
     }
 
     statements.insertSession.run(sessionId, configId);
@@ -146,7 +150,7 @@ router.post('/start', (req, res) => {
     res.status(201).json({ 
       message: 'Session started successfully',
       sessionId,
-      config: JSON.parse(config.config as string),
+      config: JSON.parse(config.config),
     });
   } catch (error) {
     console.error('Error starting session:', error);
@@ -161,7 +165,8 @@ router.post('/:sessionId/end', (req, res) => {
     
     const session = statements.getSession.get(sessionId);
     if (!session) {
-      return res.status(404).json({ error: 'Session not found' });
+      res.status(404).json({ error: 'Session not found' });
+      return;
     }
 
     statements.updateSessionEnd.run(new Date().toISOString(), sessionId);
@@ -180,7 +185,8 @@ router.delete('/:sessionId', (req, res) => {
     
     const session = statements.getSession.get(sessionId);
     if (!session) {
-      return res.status(404).json({ error: 'Session not found' });
+      res.status(404).json({ error: 'Session not found' });
+      return;
     }
 
     statements.deleteSession.run(sessionId);

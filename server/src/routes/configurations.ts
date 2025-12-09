@@ -12,7 +12,7 @@ const CreateConfigSchema = z.object({
 });
 
 // Get all configurations
-router.get('/', (req, res) => {
+router.get('/', (_req, res) => {
   try {
     const configs = statements.getAllConfigs.all();
     res.json(configs);
@@ -29,7 +29,8 @@ router.get('/:configId', (req, res) => {
     const config = statements.getConfig.get(configId);
 
     if (!config) {
-      return res.status(404).json({ error: 'Configuration not found' });
+      res.status(404).json({ error: 'Configuration not found' });
+      return;
     }
 
     res.json(config);
@@ -45,10 +46,11 @@ router.post('/', (req, res) => {
     const result = CreateConfigSchema.safeParse(req.body);
     
     if (!result.success) {
-      return res.status(400).json({ 
+      res.status(400).json({ 
         error: 'Invalid configuration',
         details: result.error.flatten(),
       });
+      return;
     }
 
     const { configId, name, config } = result.data;
@@ -56,7 +58,8 @@ router.post('/', (req, res) => {
     // Check if config already exists
     const existing = statements.getConfig.get(configId);
     if (existing) {
-      return res.status(409).json({ error: 'Configuration ID already exists' });
+      res.status(409).json({ error: 'Configuration ID already exists' });
+      return;
     }
 
     statements.insertConfig.run(configId, name, JSON.stringify(config));
@@ -79,7 +82,8 @@ router.put('/:configId', (req, res) => {
 
     const existing = statements.getConfig.get(configId);
     if (!existing) {
-      return res.status(404).json({ error: 'Configuration not found' });
+      res.status(404).json({ error: 'Configuration not found' });
+      return;
     }
 
     statements.updateConfig.run(name, JSON.stringify(config), configId);
@@ -98,7 +102,8 @@ router.delete('/:configId', (req, res) => {
     
     const config = statements.getConfig.get(configId);
     if (!config) {
-      return res.status(404).json({ error: 'Configuration not found' });
+      res.status(404).json({ error: 'Configuration not found' });
+      return;
     }
 
     statements.deleteConfig.run(configId);
