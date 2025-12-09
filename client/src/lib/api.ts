@@ -1,7 +1,7 @@
 import type { BaseConfig, Configuration, SessionDataResponse, SessionListItem } from '../types';
 
-// In production, use API subdomain; in dev, use localhost:3000
-const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://api.es2.randall.codes/api' : 'http://localhost:3000/api');
+// In production, use same-origin /api; in dev, use localhost:3000
+const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:3000/api');
 
 class ApiClient {
   private baseUrl: string;
