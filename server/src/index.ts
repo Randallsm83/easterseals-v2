@@ -18,7 +18,10 @@ const isProd = process.env.NODE_ENV === 'production';
 initializeDatabase();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: isProd ? ['https://es2.randall.codes', 'https://api.es2.randall.codes'] : true,
+  credentials: true,
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
