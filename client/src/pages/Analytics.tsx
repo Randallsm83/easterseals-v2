@@ -1,0 +1,600 @@
+import { useEffect, useState, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
+import {
+  LineChart,
+  Line,
+  ScatterChart,
+  Scatter,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
+import { Button } from '../components/ui/button';
+import { api } from '../lib/api';
+import type { SessionDataResponse, SessionListItem, ChartDataPoint, ButtonPosition } from '../types';
+import { calculateAccuracy, calculateClickRate, formatDuration, parseSqliteDate, formatTimestamp } from '../lib/utils';
+
+export function Analytics() {
+  const { sessionId: urlSessionId } = useParams<{ sessionId: string }>();
+  const [sessions, setSessions] = useState<SessionListItem[]>([]);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(urlSessionId || null);
+  const [sessionData, setSessionData] = useState<SessionDataResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadSessions();
+  }, []);
+
+  useEffect(() => {
+    if (urlSessionId) {
+      setSelectedSessionId(urlSessionId);
+      loadSessionData(urlSessionId);
+    }
+  }, [urlSessionId]);
+
+  async function loadSessions() {
+    try {
+      const data = await api.getSessions();
+      setSessions(data);
+      
+      if (!urlSessionId && data.length > 0) {
+        setSelectedSessionId(data[0].sessionId);
+        await loadSessionData(data[0].sessionId);
+      }
+    } catch (error) {
+      console.error('Failed to load sessions:', error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadSessionData(sessionId: string) {
+    setLoading(true);
+    try {
+      const data = await api.getSessionData(sessionId);
+      setSessionData(data);
+    } catch (error) {
+      console.error('Failed to load session data:', error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const handleSessionChange = (sessionId: string) => {
+    setSelectedSessionId(sessionId);
+    loadSessionData(sessionId);
+  };
+
+  const chartData = useMemo((): ChartDataPoint[] => {
+    if (!sessionData || !sessionData.startEvent) return [];
+
+    const startTime = parseSqliteDate(sessionData.startEvent.timestamp).getTime();
+
+    return sessionData.allClicks.map((click) => {
+      const clickTime = parseSqliteDate(click.timestamp).getTime();
+      const timeElapsed = (clickTime - startTime) / 1000; // Convert to seconds
+
+      return {
+        timeElapsed: Number(timeElapsed.toFixed(2)),
+        timestamp: click.timestamp,
+        left: click.clickInfo.left,
+        middle: click.clickInfo.middle,
+        right: click.clickInfo.right,
+        total: click.clickInfo.total,
+        points: click.sessionInfo.pointsCounter,
+        buttonClicked: click.buttonClicked,
+      };
+    });
+  }, [sessionData]);
+
+  const stats = useMemo(() => {
+    if (!sessionData || !sessionData.startEvent) return null;
+
+    const startTime = parseSqliteDate(sessionData.startEvent.timestamp).getTime();
+    const endTime = sessionData.endEvent 
+      ? parseSqliteDate(sessionData.endEvent.timestamp).getTime()
+      : Date.now();
+    const duration = (endTime - startTime) / 1000;
+
+    const totalClicks = sessionData.allClicks.length;
+    const correctClicks = sessionData.allClicks.filter(
+      (c) => c.buttonClicked === sessionData.sessionConfig.buttonActive
+    ).length;
+
+    return {
+      duration,
+      totalClicks,
+      correctClicks,
+      incorrectClicks: totalClicks - correctClicks,
+      accuracy: calculateAccuracy(correctClicks, totalClicks),
+      clickRate: calculateClickRate(totalClicks, duration),
+      finalPoints: sessionData.endEvent?.value.pointsEarnedFinal ?? sessionData.allClicks[sessionData.allClicks.length - 1]?.sessionInfo.pointsCounter ?? 0,
+    };
+  }, [sessionData]);
+
+  // Calculate detailed click stats per button
+  const clickStats = useMemo(() => {
+    if (!sessionData || !sessionData.startEvent) return null;
+
+    const startTime = parseSqliteDate(sessionData.startEvent.timestamp).getTime();
+    const buttons: ButtonPosition[] = ['left', 'middle', 'right'];
+    
+    const result: Record<ButtonPosition, {
+      firstClickTime: string | null;
+      timeToFirstClick: number | null;
+      totalClicks: number;
+    }> = {
+      left: { firstClickTime: null, timeToFirstClick: null, totalClicks: 0 },
+      middle: { firstClickTime: null, timeToFirstClick: null, totalClicks: 0 },
+      right: { firstClickTime: null, timeToFirstClick: null, totalClicks: 0 },
+    };
+
+    for (const button of buttons) {
+      const buttonClicks = sessionData.allClicks.filter(c => c.buttonClicked === button);
+      result[button].totalClicks = buttonClicks.length;
+      
+      if (buttonClicks.length > 0) {
+        const firstClick = buttonClicks[0];
+        const firstClickTime = parseSqliteDate(firstClick.timestamp);
+        result[button].firstClickTime = firstClickTime.toLocaleTimeString('en-US', { 
+          hour12: false, 
+          hour: '2-digit', 
+          minute: '2-digit', 
+          second: '2-digit',
+          fractionalSecondDigits: 2
+        });
+        result[button].timeToFirstClick = Number(((firstClickTime.getTime() - startTime) / 1000).toFixed(3));
+      }
+    }
+
+    return result;
+  }, [sessionData]);
+
+  const exportCSV = () => {
+    if (!chartData.length || !sessionData) return;
+
+    const headers = ['Time (s)', 'Button', 'Total Clicks', 'Left', 'Middle', 'Right', 'Points'];
+    const rows = chartData.map((d) => [
+      d.timeElapsed,
+      d.buttonClicked,
+      d.total,
+      d.left,
+      d.middle,
+      d.right,
+      d.points,
+    ]);
+
+    const csv = [headers, ...rows].map((row) => row.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `session-${selectedSessionId}-data.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  if (loading && !sessionData) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <p className="text-muted-foreground">Loading analytics...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Analytics Dashboard</h1>
+          <p className="text-muted-foreground mt-2">Session data visualization and analysis</p>
+        </div>
+        {chartData.length > 0 && (
+          <Button onClick={exportCSV} variant="outline">
+            Export CSV
+          </Button>
+        )}
+      </div>
+
+      {/* Session Selector */}
+      {sessions.length > 0 && (
+        <Card>
+          <CardContent className="pt-6">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Select Session</label>
+              <select
+                value={selectedSessionId || ''}
+                onChange={(e) => handleSessionChange(e.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                {sessions.map((session) => (
+                  <option key={session.sessionId} value={session.sessionId}>
+                    {session.sessionId} - {session.startedAt ? formatTimestamp(session.startedAt) : 'N/A'}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {!sessionData && !loading && (
+        <Card>
+          <CardContent className="p-6">
+            <p className="text-muted-foreground">No session data available. Create a session first!</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {sessionData && stats && (
+        <>
+          {/* Session Overview - Combined Config & Results */}
+          <div className="grid gap-6 lg:grid-cols-2">
+            {/* Left Column - Session Info */}
+            <Card className="bg-gradient-to-br from-card to-card/80">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-primary"></span>
+                  Session Overview
+                </CardTitle>
+                <CardDescription>
+                  {sessionData.startEvent ? parseSqliteDate(sessionData.startEvent.timestamp).toLocaleDateString('en-US', { 
+                    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+                  }) : 'N/A'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Time Info */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="rounded-lg border border-border/50 p-4 text-center">
+                    <div className="text-xl font-mono font-bold">
+                      {sessionData.startEvent ? parseSqliteDate(sessionData.startEvent.timestamp).toLocaleTimeString('en-US', { hour12: false }) : 'N/A'}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">Start Time</div>
+                  </div>
+                  <div className="rounded-lg border border-border/50 p-4 text-center">
+                    <div className="text-xl font-mono font-bold">
+                      {sessionData.endEvent ? parseSqliteDate(sessionData.endEvent.timestamp).toLocaleTimeString('en-US', { hour12: false }) : 'In Progress'}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">End Time</div>
+                  </div>
+                </div>
+
+                {/* Key Metrics */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="rounded-lg bg-primary/10 border border-primary/20 p-4 text-center">
+                    <div className="text-3xl font-bold text-primary">{formatDuration(stats.duration)}</div>
+                    <div className="text-xs text-muted-foreground mt-1">Duration</div>
+                  </div>
+                  <div className="rounded-lg bg-accent/10 border border-accent/20 p-4 text-center">
+                    <div className="text-3xl font-bold text-accent">{stats.finalPoints}</div>
+                    <div className="text-xs text-muted-foreground mt-1">Points Earned</div>
+                  </div>
+                </div>
+
+                {/* Performance Stats */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="text-center p-3 rounded-lg border border-border/50 bg-muted/30">
+                    <div className="text-2xl font-bold">{stats.totalClicks}</div>
+                    <div className="text-xs text-muted-foreground">Total Clicks</div>
+                  </div>
+                  <div className="text-center p-3 rounded-lg border border-border/50 bg-muted/30">
+                    <div className="text-2xl font-bold">{stats.accuracy}%</div>
+                    <div className="text-xs text-muted-foreground">Accuracy</div>
+                  </div>
+                  <div className="text-center p-3 rounded-lg border border-border/50 bg-muted/30">
+                    <div className="text-2xl font-bold">{stats.clickRate}/s</div>
+                    <div className="text-xs text-muted-foreground">Click Rate</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Right Column - Configuration */}
+            <Card className="bg-gradient-to-br from-card to-card/80">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-accent"></span>
+                  Configuration
+                </CardTitle>
+                <CardDescription>Session parameters</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Session Limits - grouped together */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="rounded-lg border border-border/50 p-4 text-center">
+                    <div className="text-xl font-bold">
+                      {sessionData.sessionConfig.sessionLength} {sessionData.sessionConfig.sessionLengthType}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">Session Limit</div>
+                  </div>
+                  <div className="rounded-lg border border-border/50 p-4 text-center">
+                    <div className="text-xl font-bold">
+                      {sessionData.sessionConfig.continueAfterLimit ? 'No' : 'Yes'}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">End at Limit</div>
+                  </div>
+                </div>
+
+                {/* Active Button - highlighted */}
+                <div className="rounded-lg bg-primary/10 border border-primary/20 p-4 text-center">
+                  <div className="text-2xl font-bold text-primary capitalize">
+                    {sessionData.sessionConfig.buttonActive}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">Active Button</div>
+                </div>
+
+                {/* Points Configuration - grouped together */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
+                    <div className="text-xl font-bold">
+                      {sessionData.sessionConfig.pointsAwarded}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">Points Awarded</div>
+                  </div>
+                  <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
+                    <div className="text-xl font-bold">
+                      {sessionData.sessionConfig.clicksNeeded}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">Clicks Needed</div>
+                  </div>
+                  <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
+                    <div className="text-xl font-bold">
+                      {sessionData.sessionConfig.startingPoints}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">Starting Points</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Click Distribution - Visual Cards */}
+          {clickStats && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Click Distribution</CardTitle>
+                <CardDescription>Detailed breakdown by button</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* Left Button */}
+                  <div className="relative">
+                    <div 
+                      className="rounded-xl p-6 text-center transition-transform hover:scale-[1.02]" 
+                      style={{ backgroundColor: 'rgba(92, 204, 150, 0.1)', border: '2px solid #5ccc96' }}
+                    >
+                      <div className="text-6xl font-bold mb-3" style={{ color: '#5ccc96' }}>
+                        {clickStats.left.totalClicks}
+                      </div>
+                      <div className="text-sm font-semibold mb-4" style={{ color: '#5ccc96' }}>Left Button</div>
+                      <div className="space-y-3 text-sm">
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground">First Click</span>
+                          <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
+                            {clickStats.left.firstClickTime ?? '—'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground">Time to Click</span>
+                          <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
+                            {clickStats.left.timeToFirstClick !== null ? `${clickStats.left.timeToFirstClick}s` : '—'}
+                          </span>
+                        </div>
+                      </div>
+                      {sessionData.sessionConfig.buttonActive === 'left' && (
+                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-3 py-1 rounded-full font-semibold shadow-lg">
+                          ★ Active
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Middle Button */}
+                  <div className="relative">
+                    <div 
+                      className="rounded-xl p-6 text-center transition-transform hover:scale-[1.02]" 
+                      style={{ backgroundColor: 'rgba(227, 148, 0, 0.1)', border: '2px solid #e39400' }}
+                    >
+                      <div className="text-6xl font-bold mb-3" style={{ color: '#e39400' }}>
+                        {clickStats.middle.totalClicks}
+                      </div>
+                      <div className="text-sm font-semibold mb-4" style={{ color: '#e39400' }}>Middle Button</div>
+                      <div className="space-y-3 text-sm">
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground">First Click</span>
+                          <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
+                            {clickStats.middle.firstClickTime ?? '—'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground">Time to Click</span>
+                          <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
+                            {clickStats.middle.timeToFirstClick !== null ? `${clickStats.middle.timeToFirstClick}s` : '—'}
+                          </span>
+                        </div>
+                      </div>
+                      {sessionData.sessionConfig.buttonActive === 'middle' && (
+                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-3 py-1 rounded-full font-semibold shadow-lg">
+                          ★ Active
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Right Button */}
+                  <div className="relative">
+                    <div 
+                      className="rounded-xl p-6 text-center transition-transform hover:scale-[1.02]" 
+                      style={{ backgroundColor: 'rgba(0, 163, 204, 0.1)', border: '2px solid #00a3cc' }}
+                    >
+                      <div className="text-6xl font-bold mb-3" style={{ color: '#00a3cc' }}>
+                        {clickStats.right.totalClicks}
+                      </div>
+                      <div className="text-sm font-semibold mb-4" style={{ color: '#00a3cc' }}>Right Button</div>
+                      <div className="space-y-3 text-sm">
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground">First Click</span>
+                          <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
+                            {clickStats.right.firstClickTime ?? '—'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground">Time to Click</span>
+                          <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
+                            {clickStats.right.timeToFirstClick !== null ? `${clickStats.right.timeToFirstClick}s` : '—'}
+                          </span>
+                        </div>
+                      </div>
+                      {sessionData.sessionConfig.buttonActive === 'right' && (
+                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-3 py-1 rounded-full font-semibold shadow-lg">
+                          ★ Active
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Charts */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Click Timeline - Individual Buttons</CardTitle>
+              <CardDescription>Cumulative clicks per button over time</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={400}>
+                <ScatterChart>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#444" />
+                  <XAxis
+                    dataKey="x"
+                    type="number"
+                    name="Time"
+                    domain={[0, 'auto']}
+                    label={{ value: 'Time (seconds)', position: 'insideBottom', offset: -5 }}
+                    stroke="#888"
+                  />
+                  <YAxis
+                    dataKey="y"
+                    type="number"
+                    name="Clicks"
+                    domain={[0, 'auto']}
+                    label={{ value: 'Clicks per Button', angle: -90, position: 'insideLeft' }}
+                    stroke="#888"
+                  />
+                  <Tooltip
+                    cursor={{ strokeDasharray: '3 3' }}
+                    contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
+                    labelStyle={{ color: '#fff' }}
+                  />
+                  <Legend />
+                  <Scatter
+                    name="Left Button"
+                    data={chartData.filter((d) => d.buttonClicked === 'left').map(d => ({ x: d.timeElapsed, y: d.left }))}
+                    fill="#5ccc96"
+                  />
+                  <Scatter
+                    name="Middle Button"
+                    data={chartData.filter((d) => d.buttonClicked === 'middle').map(d => ({ x: d.timeElapsed, y: d.middle }))}
+                    fill="#e39400"
+                  />
+                  <Scatter
+                    name="Right Button"
+                    data={chartData.filter((d) => d.buttonClicked === 'right').map(d => ({ x: d.timeElapsed, y: d.right }))}
+                    fill="#00a3cc"
+                  />
+                </ScatterChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Click Timeline - Total Clicks</CardTitle>
+              <CardDescription>All clicks colored by button</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={400}>
+                <ScatterChart>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#444" />
+                  <XAxis
+                    dataKey="x"
+                    type="number"
+                    name="Time"
+                    domain={[0, 'auto']}
+                    label={{ value: 'Time (seconds)', position: 'insideBottom', offset: -5 }}
+                    stroke="#888"
+                  />
+                  <YAxis
+                    dataKey="y"
+                    type="number"
+                    name="Total"
+                    domain={[0, 'auto']}
+                    label={{ value: 'Total Clicks', angle: -90, position: 'insideLeft' }}
+                    stroke="#888"
+                  />
+                  <Tooltip
+                    cursor={{ strokeDasharray: '3 3' }}
+                    contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
+                    labelStyle={{ color: '#fff' }}
+                  />
+                  <Legend />
+                  <Scatter
+                    name="Left Button"
+                    data={chartData.filter((d) => d.buttonClicked === 'left').map(d => ({ x: d.timeElapsed, y: d.total }))}
+                    fill="#5ccc96"
+                  />
+                  <Scatter
+                    name="Middle Button"
+                    data={chartData.filter((d) => d.buttonClicked === 'middle').map(d => ({ x: d.timeElapsed, y: d.total }))}
+                    fill="#e39400"
+                  />
+                  <Scatter
+                    name="Right Button"
+                    data={chartData.filter((d) => d.buttonClicked === 'right').map(d => ({ x: d.timeElapsed, y: d.total }))}
+                    fill="#00a3cc"
+                  />
+                </ScatterChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Points Accumulation</CardTitle>
+              <CardDescription>Points earned over time</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#444" />
+                  <XAxis
+                    dataKey="timeElapsed"
+                    label={{ value: 'Time (seconds)', position: 'insideBottom', offset: -5 }}
+                    stroke="#888"
+                  />
+                  <YAxis
+                    label={{ value: 'Points', angle: -90, position: 'insideLeft' }}
+                    stroke="#888"
+                  />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
+                    labelStyle={{ color: '#fff' }}
+                  />
+                  <Line type="monotone" dataKey="points" stroke="#b3a1e6" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+        </>
+      )}
+    </div>
+  );
+}
