@@ -1,4 +1,4 @@
-import type { BaseConfig, Configuration, SessionConfig, SessionDataResponse, SessionListItem } from '../types';
+import type { BaseConfig, Configuration, SessionDataResponse, SessionListItem } from '../types';
 
 // In production, use relative URL; in dev, use localhost:3000
 const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:3000/api');

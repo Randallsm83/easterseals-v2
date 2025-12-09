@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSessionStore } from '../stores/useSessionStore';
 import { api } from '../lib/api';
-import type { SessionConfig, ButtonPosition } from '../types';
+import type { ButtonPosition } from '../types';
 import { cn } from '../lib/utils';
 
 export function Session() {

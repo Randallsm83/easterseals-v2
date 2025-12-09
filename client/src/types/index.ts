@@ -8,6 +8,28 @@ export interface ButtonConfig {
   color: string;
 }
 
+// Base configuration without sessionId (used for templates)
+export interface BaseConfig {
+  sessionLength: number;
+  sessionLengthType: SessionLengthType;
+  continueAfterLimit: boolean;
+  buttonActive: ButtonPosition;
+  leftButton: ButtonConfig;
+  middleButton: ButtonConfig;
+  rightButton: ButtonConfig;
+  pointsAwarded: number;
+  clicksNeeded: number;
+  startingPoints: number;
+}
+
+// Stored configuration with metadata
+export interface Configuration {
+  configId: string;
+  name: string;
+  config: string; // JSON string of BaseConfig
+  createdAt: string;
+}
+
 export interface SessionConfig {
   sessionId: string;
   sessionLength: number;
