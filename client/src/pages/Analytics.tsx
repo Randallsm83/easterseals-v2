@@ -446,25 +446,31 @@ export function Analytics() {
                 <CardDescription>Session parameters</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Session Limits - grouped together */}
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="rounded-lg border border-border/50 p-4 text-center">
-                    <div className="text-xl font-bold">
-                      {sessionData.sessionConfig.timeLimit ?? 60}
+                {/* Session Limits - 4 columns */}
+                <div className="grid grid-cols-4 gap-3">
+                  <div className="rounded-lg border border-border/50 p-3 text-center">
+                    <div className="text-lg font-bold">
+                      {sessionData.sessionConfig.timeLimit ?? 60}s
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">Time Limit</div>
                   </div>
-                  <div className="rounded-lg border border-border/50 p-4 text-center">
-                    <div className="text-xl font-bold">
+                  <div className="rounded-lg border border-border/50 p-3 text-center">
+                    <div className="text-lg font-bold">
                       {formatMoney(sessionData.sessionConfig.moneyLimit ?? 100)}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">Money Limit</div>
                   </div>
-                  <div className="rounded-lg border border-border/50 p-4 text-center">
-                    <div className="text-xl font-bold">
+                  <div className="rounded-lg border border-border/50 p-3 text-center">
+                    <div className="text-lg font-bold">
                       {sessionData.sessionConfig.continueAfterMoneyLimit ? 'off' : 'on'}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">End At Limit</div>
+                  </div>
+                  <div className="rounded-lg border border-border/50 p-3 text-center">
+                    <div className="text-lg font-bold">
+                      {sessionData.sessionConfig.playAwardSound ? 'on' : 'off'}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">Award Sound</div>
                   </div>
                 </div>
 
@@ -476,8 +482,8 @@ export function Analytics() {
                   <div className="text-xs text-muted-foreground mt-1">Active Button</div>
                 </div>
 
-                {/* Money Configuration - grouped together */}
-                <div className="grid grid-cols-2 gap-3">
+                {/* Money Configuration - 3 columns */}
+                <div className="grid grid-cols-3 gap-3">
                   <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
                     <div className="text-xl font-bold">
                       {formatMoney(sessionData.sessionConfig.moneyAwarded ?? 5)}
@@ -495,12 +501,6 @@ export function Analytics() {
                       {formatMoney(sessionData.sessionConfig.startingMoney ?? 0)}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">Starting Money</div>
-                  </div>
-                  <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
-                    <div className="text-xl font-bold">
-                      {sessionData.sessionConfig.playAwardSound ? 'on' : 'off'}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1">Award Sound</div>
                   </div>
                 </div>
               </CardContent>
