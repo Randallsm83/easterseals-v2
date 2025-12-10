@@ -20,6 +20,7 @@ export function StartSession() {
     if (configId) {
       loadConfiguration();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configId]);
 
   async function loadConfiguration() {

@@ -1,0 +1,37 @@
+name: Sync Staging
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Sync staging with main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout staging
+          git merge main --no-edit
+          git push origin staging
+      
+      - name: Recreate PR if needed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Check if open PR exists
+          EXISTING_PR=$(gh pr list --head staging --base main --state open --json number -q '.[0].number')
+          if [ -z "$EXISTING_PR" ]; then
+            # Create empty commit to enable PR
+            git commit --allow-empty -m "Ready for next release"
+            git push origin staging
+            gh pr create --base main --head staging --title "Staging → Main" --body "Long-lived PR for staging changes. Merge when ready to deploy to production."
+          fi
