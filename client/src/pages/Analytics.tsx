@@ -24,7 +24,7 @@ function formatMoney(cents: number): string {
 }
 
 export function Analytics() {
-  const { sessionId: urlSessionId, configId: urlConfigId } = useParams<{ sessionId?: string; configId?: string }>();
+  const { sessionId: urlSessionId } = useParams<{ sessionId?: string }>();
   
   // Cascading dropdown state
   const [participants, setParticipants] = useState<Participant[]>([]);
@@ -137,19 +137,17 @@ export function Analytics() {
       const timeElapsed = (clickTime - startTime) / 1000;
       
       // Check if data has new format (cumulative counts) or old format
-      const hasNewFormat = click.clickInfo?.clicks?.left !== undefined || click.clickInfo?.left !== undefined;
+      const hasNewFormat = click.clickInfo?.left !== undefined && click.clickInfo?.total !== undefined;
       
       if (hasNewFormat) {
-        // New format might have nested clicks object or flat structure
-        const clicks = click.clickInfo?.clicks || click.clickInfo;
         return {
           timeElapsed: Number(timeElapsed.toFixed(2)),
           timestamp: click.timestamp,
-          left: clicks?.left ?? 0,
-          middle: clicks?.middle ?? 0,
-          right: clicks?.right ?? 0,
-          total: clicks?.total ?? 0,
-          money: click.sessionInfo?.moneyCounter ?? click.clickInfo?.moneyCounter ?? 0,
+          left: click.clickInfo?.left ?? 0,
+          middle: click.clickInfo?.middle ?? 0,
+          right: click.clickInfo?.right ?? 0,
+          total: click.clickInfo?.total ?? 0,
+          money: click.sessionInfo?.moneyCounter ?? 0,
           buttonClicked: click.buttonClicked,
         };
       }
@@ -204,8 +202,7 @@ export function Analytics() {
 
     // Get final money - prefer endEvent, fallback to last click's moneyCounter, or compute from chartData
     let finalMoney = sessionData.endEvent?.value?.moneyCounter 
-      ?? sessionData.allClicks[sessionData.allClicks.length - 1]?.sessionInfo?.moneyCounter
-      ?? sessionData.allClicks[sessionData.allClicks.length - 1]?.clickInfo?.moneyCounter;
+      ?? sessionData.allClicks[sessionData.allClicks.length - 1]?.sessionInfo?.moneyCounter;
     
     // If still undefined (old format), use chartData's last money value
     if (finalMoney === undefined && chartData.length > 0) {

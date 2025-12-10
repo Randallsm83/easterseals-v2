@@ -163,4 +163,5 @@ export interface ChartDataPoint {
 // Participant type for cascading dropdowns
 export interface Participant {
   participantId: string;
+  sessionCount: number;
 }
