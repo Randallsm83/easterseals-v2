@@ -24,6 +24,6 @@ jobs:
             npm ci
             npm run build
             cp -r client/dist/* ~/es2.randall.codes/
-            pm2 delete easterseals 2>/dev/null || true
-            PORT=8080 pm2 start server/dist/index.js --name easterseals -i max
+            pm2 delete es2-api 2>/dev/null || true
+            PORT=8080 pm2 start server/dist/index.js --name es2-api -i max
             pm2 save
