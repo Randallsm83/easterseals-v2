@@ -5,7 +5,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { api } from '../lib/api';
-import type { BaseConfig } from '../types';
+import type { BaseConfig, ButtonPosition } from '../types';
 
 export function ConfigurationSetup() {
   const navigate = useNavigate();
@@ -132,7 +132,7 @@ export function ConfigurationSetup() {
                 <select
                   id="buttonActive"
                   value={formData.buttonActive}
-                  onChange={(e) => setFormData({ ...formData, buttonActive: e.target.value as any })}
+onChange={(e) => setFormData({ ...formData, buttonActive: e.target.value as ButtonPosition })}
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
                 >
                   <option value="left">Left</option>

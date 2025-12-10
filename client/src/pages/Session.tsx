@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSessionStore } from '../stores/useSessionStore';
 import { api } from '../lib/api';
@@ -26,48 +26,9 @@ export function Session() {
   const [error, setError] = useState<string | null>(null);
   const [clickIntervalCounter, setClickIntervalCounter] = useState(0);
   const [sessionMessage, setSessionMessage] = useState('');
+  const timerIdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    if (!sessionId) {
-      navigate('/');
-      return;
-    }
-
-    loadSessionConfig();
-  }, [sessionId]);
-
-  async function loadSessionConfig() {
-    try {
-      // Fetch session data which includes config
-      const sessionData = await api.getSessionData(sessionId!);
-      const sessionConfig = { ...sessionData.sessionConfig, sessionId: sessionId! };
-      setConfig(sessionConfig);
-      setLoading(false);
-
-      // Log session start
-      await api.logEvent({
-        sessionId: sessionId!,
-        event: 'start',
-        value: {
-          pointsCounter: sessionConfig.startingPoints,
-          limitReached: false,
-        },
-      });
-
-      startSession();
-
-      // Setup timer if session is time-based
-      if (sessionConfig.sessionLengthType === 'seconds') {
-        setTimeout(() => {
-          handleSessionEnd();
-        }, sessionConfig.sessionLength * 1000);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load session');
-      setLoading(false);
-    }
-  }
-
+  // handleSessionEnd must be defined before loadSessionConfig since it's called by it
   const handleSessionEnd = useCallback(async () => {
     if (limitReached || !config) return;
 
@@ -89,7 +50,55 @@ export function Session() {
         limitReached: true,
       },
     });
-  }, [config, sessionId, pointsCounter, limitReached]);
+  }, [config, sessionId, pointsCounter, limitReached, setLimitReached, endSession]);
+
+  const loadSessionConfig = useCallback(async () => {
+    try {
+      // Fetch session data which includes config
+      const sessionData = await api.getSessionData(sessionId!);
+      const sessionConfig = { ...sessionData.sessionConfig, sessionId: sessionId! };
+      setConfig(sessionConfig);
+      setLoading(false);
+
+      // Log session start
+      await api.logEvent({
+        sessionId: sessionId!,
+        event: 'start',
+        value: {
+          pointsCounter: sessionConfig.startingPoints,
+          limitReached: false,
+        },
+      });
+
+      startSession();
+
+      // Setup timer if session is time-based
+      if (sessionConfig.sessionLengthType === 'seconds') {
+        timerIdRef.current = setTimeout(() => {
+          handleSessionEnd();
+        }, sessionConfig.sessionLength * 1000);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load session');
+      setLoading(false);
+    }
+  }, [sessionId, setConfig, startSession, handleSessionEnd]);
+
+  useEffect(() => {
+    if (!sessionId) {
+      navigate('/');
+      return;
+    }
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional: load config on mount
+    loadSessionConfig();
+
+    return () => {
+      if (timerIdRef.current) {
+        clearTimeout(timerIdRef.current);
+      }
+    };
+  }, [sessionId, navigate, loadSessionConfig]);
 
   const handleButtonClick = async (button: ButtonPosition) => {
     if (!config || (!sessionActive && !config.continueAfterLimit)) return;

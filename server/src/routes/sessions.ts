@@ -2,6 +2,23 @@ import { Router } from 'express';
 import { statements } from '../db/index.js';
 import { z } from 'zod';
 
+interface SessionRow {
+  sessionId: string;
+  configId: string;
+  configName: string;
+  config: string;
+  startedAt: string;
+  endedAt: string | null;
+}
+
+interface EventRow {
+  id: number;
+  sessionId: string;
+  event: string;
+  value: string;
+  timestamp: string;
+}
+
 const router = Router();
 
 const StartSessionSchema = z.object({
@@ -14,9 +31,9 @@ router.get('/', (_req, res) => {
   try {
     const sessions = statements.getAllSessions.all();
     
-    const sessionsWithStats = sessions.map((session: any) => {
+    const sessionsWithStats = (sessions as SessionRow[]).map((session) => {
       const clickCount = statements.getEventCount.get(session.sessionId, 'click') as { count: number };
-      const endEvent = statements.getSessionEventByType.get(session.sessionId, 'end') as any;
+      const endEvent = statements.getSessionEventByType.get(session.sessionId, 'end') as EventRow | undefined;
       
       let finalPoints = null;
       let duration = null;
@@ -25,7 +42,7 @@ router.get('/', (_req, res) => {
         const endData = JSON.parse(endEvent.value);
         finalPoints = endData.pointsEarnedFinal || endData.pointsCounter;
         
-        const startEvent = statements.getSessionEventByType.get(session.sessionId, 'start') as any;
+        const startEvent = statements.getSessionEventByType.get(session.sessionId, 'start') as EventRow | undefined;
         if (startEvent && session.endedAt) {
           const startTime = new Date(startEvent.timestamp).getTime();
           const endTime = new Date(endEvent.timestamp).getTime();
@@ -58,7 +75,7 @@ router.get('/:sessionId/data', (req, res) => {
     const { sessionId } = req.params;
     console.log('Looking up session:', sessionId);
     
-    const session = statements.getSession.get(sessionId) as any;
+    const session = statements.getSession.get(sessionId) as SessionRow | undefined;
     console.log('Session found:', session);
     if (!session) {
       res.status(404).json({ error: 'Session not found' });
@@ -66,9 +83,9 @@ router.get('/:sessionId/data', (req, res) => {
     }
 
     const sessionConfig = JSON.parse(session.config);
-    const startEventRow = statements.getSessionEventByType.get(sessionId, 'start') as any;
-    const endEventRow = statements.getSessionEventByType.get(sessionId, 'end') as any;
-    const clickRows = statements.getClickEvents.all(sessionId) as any[];
+    const startEventRow = statements.getSessionEventByType.get(sessionId, 'start') as EventRow | undefined;
+    const endEventRow = statements.getSessionEventByType.get(sessionId, 'end') as EventRow | undefined;
+    const clickRows = statements.getClickEvents.all(sessionId) as EventRow[];
 
     const startEvent = startEventRow ? {
       sessionId,
@@ -82,7 +99,7 @@ router.get('/:sessionId/data', (req, res) => {
       value: JSON.parse(endEventRow.value),
     } : null;
 
-    const allClicks = clickRows.map((row: any) => {
+    const allClicks = clickRows.map((row) => {
       const value = JSON.parse(row.value);
       return {
         sessionId,
