@@ -73,19 +73,61 @@ export function Analytics() {
     if (!sessionData || !sessionData.startEvent) return [];
 
     const startTime = parseSqliteDate(sessionData.startEvent.timestamp).getTime();
+    
+    // Track cumulative counts for old data format that doesn't have them
+    let leftCount = 0;
+    let middleCount = 0;
+    let rightCount = 0;
+    let totalCount = 0;
+    let pointsCounter = sessionData.sessionConfig.startingPoints ? Number(sessionData.sessionConfig.startingPoints) : 0;
+    const clicksNeeded = sessionData.sessionConfig.clicksNeeded ? Number(sessionData.sessionConfig.clicksNeeded) : 1;
+    const pointsAwarded = sessionData.sessionConfig.pointsAwarded ? Number(sessionData.sessionConfig.pointsAwarded) : 0;
+    const activeButton = sessionData.sessionConfig.buttonActive;
+    let correctClicksSinceLastAward = 0;
 
     return sessionData.allClicks.map((click) => {
       const clickTime = parseSqliteDate(click.timestamp).getTime();
-      const timeElapsed = (clickTime - startTime) / 1000; // Convert to seconds
+      const timeElapsed = (clickTime - startTime) / 1000;
+      
+      // Check if data has new format (cumulative counts) or old format
+      const hasNewFormat = click.clickInfo.left !== undefined && click.clickInfo.total !== undefined;
+      
+      if (hasNewFormat) {
+        return {
+          timeElapsed: Number(timeElapsed.toFixed(2)),
+          timestamp: click.timestamp,
+          left: click.clickInfo.left,
+          middle: click.clickInfo.middle,
+          right: click.clickInfo.right,
+          total: click.clickInfo.total,
+          points: click.sessionInfo.pointsCounter ?? 0,
+          buttonClicked: click.buttonClicked,
+        };
+      }
+      
+      // Old format: compute cumulative counts
+      totalCount++;
+      if (click.buttonClicked === 'left') leftCount++;
+      else if (click.buttonClicked === 'middle') middleCount++;
+      else if (click.buttonClicked === 'right') rightCount++;
+      
+      // Compute points for old data
+      if (click.buttonClicked === activeButton) {
+        correctClicksSinceLastAward++;
+        if (correctClicksSinceLastAward >= clicksNeeded) {
+          pointsCounter += pointsAwarded;
+          correctClicksSinceLastAward = 0;
+        }
+      }
 
       return {
         timeElapsed: Number(timeElapsed.toFixed(2)),
         timestamp: click.timestamp,
-        left: click.clickInfo.left,
-        middle: click.clickInfo.middle,
-        right: click.clickInfo.right,
-        total: click.clickInfo.total,
-        points: click.sessionInfo.pointsCounter,
+        left: leftCount,
+        middle: middleCount,
+        right: rightCount,
+        total: totalCount,
+        points: pointsCounter,
         buttonClicked: click.buttonClicked,
       };
     });
@@ -105,6 +147,15 @@ export function Analytics() {
       (c) => c.buttonClicked === sessionData.sessionConfig.buttonActive
     ).length;
 
+    // Get final points - prefer endEvent, fallback to last click's pointsCounter, or compute from chartData
+    let finalPoints = sessionData.endEvent?.value?.pointsEarnedFinal 
+      ?? sessionData.allClicks[sessionData.allClicks.length - 1]?.sessionInfo?.pointsCounter;
+    
+    // If still undefined (old format), use chartData's last point value
+    if (finalPoints === undefined && chartData.length > 0) {
+      finalPoints = chartData[chartData.length - 1].points;
+    }
+
     return {
       duration,
       totalClicks,
@@ -112,9 +163,9 @@ export function Analytics() {
       incorrectClicks: totalClicks - correctClicks,
       accuracy: calculateAccuracy(correctClicks, totalClicks),
       clickRate: calculateClickRate(totalClicks, duration),
-      finalPoints: sessionData.endEvent?.value.pointsEarnedFinal ?? sessionData.allClicks[sessionData.allClicks.length - 1]?.sessionInfo.pointsCounter ?? 0,
+      finalPoints: finalPoints ?? 0,
     };
-  }, [sessionData]);
+  }, [sessionData, chartData]);
 
   // Calculate detailed click stats per button
   const clickStats = useMemo(() => {
