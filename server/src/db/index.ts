@@ -29,11 +29,15 @@ export function initializeDatabase() {
 
     CREATE TABLE IF NOT EXISTS sessions (
       sessionId TEXT PRIMARY KEY,
+      participantId TEXT NOT NULL,
       configId TEXT NOT NULL,
       startedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
       endedAt DATETIME,
       FOREIGN KEY (configId) REFERENCES configurations(configId) ON DELETE CASCADE
     );
+
+    CREATE INDEX IF NOT EXISTS idx_sessions_participantId 
+      ON sessions(participantId);
 
     CREATE TABLE IF NOT EXISTS session_event_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -99,12 +103,30 @@ function createStatements() {
       ORDER BY s.startedAt DESC
     `),
 
+    getSessionsByParticipant: db.prepare(`
+      SELECT s.*, c.name as configName
+      FROM sessions s
+      JOIN configurations c ON s.configId = c.configId
+      WHERE s.participantId = ?
+      ORDER BY s.startedAt DESC
+    `),
+
+    getDistinctParticipants: db.prepare(`
+      SELECT DISTINCT participantId FROM sessions ORDER BY participantId ASC
+    `),
+
+    getMaxSessionIdForParticipant: db.prepare(`
+      SELECT COUNT(*) as sessionCount 
+      FROM sessions 
+      WHERE participantId = ?
+    `),
+
     getSessionsByConfig: db.prepare(`
       SELECT * FROM sessions WHERE configId = ? ORDER BY startedAt DESC
     `),
 
     insertSession: db.prepare(`
-      INSERT INTO sessions (sessionId, configId) VALUES (?, ?)
+      INSERT INTO sessions (sessionId, participantId, configId) VALUES (?, ?, ?)
     `),
 
     updateSessionEnd: db.prepare(`

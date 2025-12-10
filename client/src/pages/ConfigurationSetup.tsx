@@ -14,16 +14,17 @@ export function ConfigurationSetup() {
   const [configName, setConfigName] = useState('');
   
   const [formData, setFormData] = useState<BaseConfig>({
-    sessionLength: 60,
-    sessionLengthType: 'seconds',
-    continueAfterLimit: false,
+    timeLimit: 60,
+    moneyAwarded: 5, // cents
+    moneyLimit: 1000000, // cents ($10,000 default - effectively no limit)
+    startingMoney: 0, // cents
+    awardInterval: 10, // clicks needed
+    playAwardSound: true,
+    continueAfterMoneyLimit: true,
     buttonActive: 'left',
     leftButton: { shape: 'circle', color: '#5ccc96' },
     middleButton: { shape: 'square', color: '#e39400' },
     rightButton: { shape: 'circle', color: '#00a3cc' },
-    pointsAwarded: 1,
-    clicksNeeded: 1,
-    startingPoints: 0,
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -79,43 +80,16 @@ export function ConfigurationSetup() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="sessionLength">Session Length *</Label>
-                  <Input
-                    id="sessionLength"
-                    type="number"
-                    min="1"
-                    value={formData.sessionLength}
-                    onChange={(e) => setFormData({ ...formData, sessionLength: parseInt(e.target.value) })}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="sessionLengthType">Length Type</Label>
-                  <select
-                    id="sessionLengthType"
-                    value={formData.sessionLengthType}
-                    onChange={(e) => setFormData({ ...formData, sessionLengthType: e.target.value as 'seconds' | 'points' })}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
-                  >
-                    <option value="seconds">Seconds</option>
-                    <option value="points">Points</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  id="continueAfterLimit"
-                  checked={formData.continueAfterLimit}
-                  onChange={(e) => setFormData({ ...formData, continueAfterLimit: e.target.checked })}
-                  className="h-4 w-4 rounded border-border"
+              <div className="space-y-2">
+                <Label htmlFor="timeLimit">Time Limit (seconds) *</Label>
+                <Input
+                  id="timeLimit"
+                  type="number"
+                  min="1"
+                  value={formData.timeLimit}
+                  onChange={(e) => setFormData({ ...formData, timeLimit: parseInt(e.target.value) })}
+                  required
                 />
-                <Label htmlFor="continueAfterLimit" className="cursor-pointer">
-                  Continue session after limit reached
-                </Label>
               </div>
             </CardContent>
           </Card>
@@ -187,42 +161,93 @@ onChange={(e) => setFormData({ ...formData, buttonActive: e.target.value as Butt
           <Card>
             <CardHeader>
               <CardTitle>Rewards Configuration</CardTitle>
-              <CardDescription>Point system settings</CardDescription>
+              <CardDescription>Money-based reward system</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="pointsAwarded">Points Awarded *</Label>
+                  <Label htmlFor="moneyAwarded">Money Awarded (cents) *</Label>
                   <Input
-                    id="pointsAwarded"
+                    id="moneyAwarded"
                     type="number"
                     min="0"
-                    value={formData.pointsAwarded}
-                    onChange={(e) => setFormData({ ...formData, pointsAwarded: parseInt(e.target.value) })}
+                    value={formData.moneyAwarded}
+                    onChange={(e) => setFormData({ ...formData, moneyAwarded: parseInt(e.target.value) })}
                     required
                   />
+                  <p className="text-xs text-muted-foreground">
+                    ${(formData.moneyAwarded / 100).toFixed(2)} per reward
+                  </p>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="clicksNeeded">Clicks Needed *</Label>
+                  <Label htmlFor="awardInterval">Award Interval (clicks) *</Label>
                   <Input
-                    id="clicksNeeded"
+                    id="awardInterval"
                     type="number"
                     min="1"
-                    value={formData.clicksNeeded}
-                    onChange={(e) => setFormData({ ...formData, clicksNeeded: parseInt(e.target.value) })}
+                    value={formData.awardInterval}
+                    onChange={(e) => setFormData({ ...formData, awardInterval: parseInt(e.target.value) })}
                     required
                   />
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="startingPoints">Starting Points *</Label>
+                  <Label htmlFor="startingMoney">Starting Money (cents) *</Label>
                   <Input
-                    id="startingPoints"
+                    id="startingMoney"
                     type="number"
                     min="0"
-                    value={formData.startingPoints}
-                    onChange={(e) => setFormData({ ...formData, startingPoints: parseInt(e.target.value) })}
+                    value={formData.startingMoney}
+                    onChange={(e) => setFormData({ ...formData, startingMoney: parseInt(e.target.value) })}
                     required
                   />
+                  <p className="text-xs text-muted-foreground">
+                    ${(formData.startingMoney / 100).toFixed(2)} starting balance
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="moneyLimit">Money Limit (cents) *</Label>
+                  <Input
+                    id="moneyLimit"
+                    type="number"
+                    min="0"
+                    value={formData.moneyLimit}
+                    onChange={(e) => setFormData({ ...formData, moneyLimit: parseInt(e.target.value) })}
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    ${(formData.moneyLimit / 100).toFixed(2)} maximum
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="continueAfterMoneyLimit"
+                    checked={formData.continueAfterMoneyLimit}
+                    onChange={(e) => setFormData({ ...formData, continueAfterMoneyLimit: e.target.checked })}
+                    className="h-4 w-4 rounded border-border"
+                  />
+                  <Label htmlFor="continueAfterMoneyLimit" className="cursor-pointer">
+                    Continue session after money limit reached
+                  </Label>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="playAwardSound"
+                    checked={formData.playAwardSound}
+                    onChange={(e) => setFormData({ ...formData, playAwardSound: e.target.checked })}
+                    className="h-4 w-4 rounded border-border"
+                  />
+                  <Label htmlFor="playAwardSound" className="cursor-pointer">
+                    Play sound on reward
+                  </Label>
                 </div>
               </div>
             </CardContent>

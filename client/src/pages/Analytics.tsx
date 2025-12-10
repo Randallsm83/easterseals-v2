@@ -15,44 +15,80 @@ import {
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { api } from '../lib/api';
-import type { SessionDataResponse, SessionListItem, ChartDataPoint, ButtonPosition } from '../types';
+import type { SessionDataResponse, SessionListItem, ChartDataPoint, ButtonPosition, Participant } from '../types';
 import { calculateAccuracy, calculateClickRate, formatDuration, parseSqliteDate, formatTimestamp } from '../lib/utils';
+
+// Format cents as dollars
+function formatMoney(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
 
 export function Analytics() {
   const { sessionId: urlSessionId, configId: urlConfigId } = useParams<{ sessionId?: string; configId?: string }>();
-  const [sessions, setSessions] = useState<SessionListItem[]>([]);
+  
+  // Cascading dropdown state
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [selectedParticipantId, setSelectedParticipantId] = useState<string>('');
+  const [participantSessions, setParticipantSessions] = useState<SessionListItem[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(urlSessionId || null);
   const [sessionData, setSessionData] = useState<SessionDataResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Load participants on mount
   useEffect(() => {
-    loadSessions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [urlConfigId]);
+    loadParticipants();
+  }, []);
 
+  // If URL has sessionId, extract participantId and load
   useEffect(() => {
     if (urlSessionId) {
-      setSelectedSessionId(urlSessionId);
-      loadSessionData(urlSessionId);
+      // Session IDs are formatted as "participantId-sequenceNumber"
+      const parts = urlSessionId.split('-');
+      if (parts.length >= 2) {
+        const participantId = parts.slice(0, -1).join('-'); // Handle participant IDs with dashes
+        setSelectedParticipantId(participantId);
+        loadParticipantSessions(participantId).then(() => {
+          setSelectedSessionId(urlSessionId);
+          loadSessionData(urlSessionId);
+        });
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlSessionId]);
 
-  async function loadSessions() {
+  async function loadParticipants() {
     try {
-      // If configId in URL, only fetch sessions for that config
-      const data = urlConfigId 
-        ? await api.getConfigurationSessions(urlConfigId)
-        : await api.getSessions();
-      setSessions(data);
+      const data = await api.getParticipants();
+      setParticipants(data);
       
+      // If no URL session specified, select first participant
       if (!urlSessionId && data.length > 0) {
+        setSelectedParticipantId(data[0].participantId);
+        await loadParticipantSessions(data[0].participantId);
+      }
+    } catch (error) {
+      console.error('Failed to load participants:', error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadParticipantSessions(participantId: string) {
+    if (!participantId) {
+      setParticipantSessions([]);
+      return;
+    }
+    try {
+      const data = await api.getParticipantSessions(participantId);
+      setParticipantSessions(data);
+      
+      // Auto-select first session for this participant
+      if (data.length > 0 && !urlSessionId) {
         setSelectedSessionId(data[0].sessionId);
         await loadSessionData(data[0].sessionId);
       }
     } catch (error) {
-      console.error('Failed to load sessions:', error);
-    } finally {
-      setLoading(false);
+      console.error('Failed to load participant sessions:', error);
     }
   }
 
@@ -67,6 +103,13 @@ export function Analytics() {
       setLoading(false);
     }
   }
+
+  const handleParticipantChange = async (participantId: string) => {
+    setSelectedParticipantId(participantId);
+    setSelectedSessionId(null);
+    setSessionData(null);
+    await loadParticipantSessions(participantId);
+  };
 
   const handleSessionChange = (sessionId: string) => {
     setSelectedSessionId(sessionId);
@@ -83,9 +126,9 @@ export function Analytics() {
     let middleCount = 0;
     let rightCount = 0;
     let totalCount = 0;
-    let pointsCounter = sessionData.sessionConfig.startingPoints ? Number(sessionData.sessionConfig.startingPoints) : 0;
-    const clicksNeeded = sessionData.sessionConfig.clicksNeeded ? Number(sessionData.sessionConfig.clicksNeeded) : 1;
-    const pointsAwarded = sessionData.sessionConfig.pointsAwarded ? Number(sessionData.sessionConfig.pointsAwarded) : 0;
+    let moneyCounter = sessionData.sessionConfig.startingMoney ? Number(sessionData.sessionConfig.startingMoney) : 0;
+    const awardInterval = sessionData.sessionConfig.awardInterval ? Number(sessionData.sessionConfig.awardInterval) : 1;
+    const moneyAwarded = sessionData.sessionConfig.moneyAwarded ? Number(sessionData.sessionConfig.moneyAwarded) : 0;
     const activeButton = sessionData.sessionConfig.buttonActive;
     let correctClicksSinceLastAward = 0;
 
@@ -94,17 +137,19 @@ export function Analytics() {
       const timeElapsed = (clickTime - startTime) / 1000;
       
       // Check if data has new format (cumulative counts) or old format
-      const hasNewFormat = click.clickInfo.left !== undefined && click.clickInfo.total !== undefined;
+      const hasNewFormat = click.clickInfo?.clicks?.left !== undefined || click.clickInfo?.left !== undefined;
       
       if (hasNewFormat) {
+        // New format might have nested clicks object or flat structure
+        const clicks = click.clickInfo?.clicks || click.clickInfo;
         return {
           timeElapsed: Number(timeElapsed.toFixed(2)),
           timestamp: click.timestamp,
-          left: click.clickInfo.left,
-          middle: click.clickInfo.middle,
-          right: click.clickInfo.right,
-          total: click.clickInfo.total,
-          points: click.sessionInfo.pointsCounter ?? 0,
+          left: clicks?.left ?? 0,
+          middle: clicks?.middle ?? 0,
+          right: clicks?.right ?? 0,
+          total: clicks?.total ?? 0,
+          money: click.sessionInfo?.moneyCounter ?? click.clickInfo?.moneyCounter ?? 0,
           buttonClicked: click.buttonClicked,
         };
       }
@@ -115,11 +160,11 @@ export function Analytics() {
       else if (click.buttonClicked === 'middle') middleCount++;
       else if (click.buttonClicked === 'right') rightCount++;
       
-      // Compute points for old data
+      // Compute money for old data
       if (click.buttonClicked === activeButton) {
         correctClicksSinceLastAward++;
-        if (correctClicksSinceLastAward >= clicksNeeded) {
-          pointsCounter += pointsAwarded;
+        if (correctClicksSinceLastAward >= awardInterval) {
+          moneyCounter += moneyAwarded;
           correctClicksSinceLastAward = 0;
         }
       }
@@ -131,7 +176,7 @@ export function Analytics() {
         middle: middleCount,
         right: rightCount,
         total: totalCount,
-        points: pointsCounter,
+        money: moneyCounter,
         buttonClicked: click.buttonClicked,
       };
     });
@@ -157,13 +202,14 @@ export function Analytics() {
       (c) => c.buttonClicked === sessionData.sessionConfig.buttonActive
     ).length;
 
-    // Get final points - prefer endEvent, fallback to last click's pointsCounter, or compute from chartData
-    let finalPoints = sessionData.endEvent?.value?.pointsEarnedFinal 
-      ?? sessionData.allClicks[sessionData.allClicks.length - 1]?.sessionInfo?.pointsCounter;
+    // Get final money - prefer endEvent, fallback to last click's moneyCounter, or compute from chartData
+    let finalMoney = sessionData.endEvent?.value?.moneyCounter 
+      ?? sessionData.allClicks[sessionData.allClicks.length - 1]?.sessionInfo?.moneyCounter
+      ?? sessionData.allClicks[sessionData.allClicks.length - 1]?.clickInfo?.moneyCounter;
     
-    // If still undefined (old format), use chartData's last point value
-    if (finalPoints === undefined && chartData.length > 0) {
-      finalPoints = chartData[chartData.length - 1].points;
+    // If still undefined (old format), use chartData's last money value
+    if (finalMoney === undefined && chartData.length > 0) {
+      finalMoney = chartData[chartData.length - 1].money;
     }
 
     return {
@@ -173,7 +219,7 @@ export function Analytics() {
       incorrectClicks: totalClicks - correctClicks,
       accuracy: calculateAccuracy(correctClicks, totalClicks),
       clickRate: calculateClickRate(totalClicks, duration),
-      finalPoints: finalPoints ?? 0,
+      finalMoney: finalMoney ?? 0,
     };
   }, [sessionData, chartData]);
 
@@ -218,7 +264,7 @@ export function Analytics() {
   const exportCSV = () => {
     if (!chartData.length || !sessionData) return;
 
-    const headers = ['Time (s)', 'Button', 'Total Clicks', 'Left', 'Middle', 'Right', 'Points'];
+    const headers = ['Time (s)', 'Button', 'Total Clicks', 'Left', 'Middle', 'Right', 'Money (cents)'];
     const rows = chartData.map((d) => [
       d.timeElapsed,
       d.buttonClicked,
@@ -226,7 +272,7 @@ export function Analytics() {
       d.left,
       d.middle,
       d.right,
-      d.points,
+      d.money,
     ]);
 
     const csv = [headers, ...rows].map((row) => row.join(',')).join('\n');
@@ -261,27 +307,44 @@ export function Analytics() {
         )}
       </div>
 
-      {/* Session Selector */}
-      {sessions.length > 0 && (
-        <Card>
-          <CardContent className="pt-6">
+      {/* Cascading Participant/Session Selectors */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Select Session</label>
+              <label className="text-sm font-medium">Participant ID</label>
+              <select
+                value={selectedParticipantId}
+                onChange={(e) => handleParticipantChange(e.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="">Select a participant...</option>
+                {participants.map((p) => (
+                  <option key={p.participantId} value={p.participantId}>
+                    {p.participantId} ({p.sessionCount} sessions)
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Session</label>
               <select
                 value={selectedSessionId || ''}
                 onChange={(e) => handleSessionChange(e.target.value)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                disabled={!selectedParticipantId || participantSessions.length === 0}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:opacity-50"
               >
-                {sessions.map((session) => (
+                <option value="">Select a session...</option>
+                {participantSessions.map((session) => (
                   <option key={session.sessionId} value={session.sessionId}>
                     {session.sessionId} - {session.startedAt ? formatTimestamp(session.startedAt) : 'N/A'}
                   </option>
                 ))}
               </select>
             </div>
-          </CardContent>
-        </Card>
-      )}
+          </div>
+        </CardContent>
+      </Card>
 
       {!sessionData && !loading && (
         <Card>
@@ -332,8 +395,8 @@ export function Analytics() {
                     <div className="text-xs text-muted-foreground mt-1">Duration</div>
                   </div>
                   <div className="rounded-lg bg-accent/10 border border-accent/20 p-4 text-center">
-                    <div className="text-3xl font-bold text-accent">{stats.finalPoints}</div>
-                    <div className="text-xs text-muted-foreground mt-1">Points Earned</div>
+                    <div className="text-3xl font-bold text-accent">{formatMoney(stats.finalMoney)}</div>
+                    <div className="text-xs text-muted-foreground mt-1">Money Earned</div>
                   </div>
                 </div>
 
@@ -369,15 +432,15 @@ export function Analytics() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="rounded-lg border border-border/50 p-4 text-center">
                     <div className="text-xl font-bold">
-                      {sessionData.sessionConfig.sessionLimit ?? sessionData.sessionConfig.sessionLength ?? 'N/A'}
+                      {sessionData.sessionConfig.timeLimit ?? 60}s
                     </div>
-                    <div className="text-xs text-muted-foreground mt-1">Session Limit</div>
+                    <div className="text-xs text-muted-foreground mt-1">Time Limit</div>
                   </div>
                   <div className="rounded-lg border border-border/50 p-4 text-center">
                     <div className="text-xl font-bold">
-                      {(sessionData.sessionConfig.endAtLimit ?? !sessionData.sessionConfig.continueAfterLimit) ? 'Yes' : 'No'}
+                      {formatMoney(sessionData.sessionConfig.moneyLimit ?? 100)}
                     </div>
-                    <div className="text-xs text-muted-foreground mt-1">End at Limit</div>
+                    <div className="text-xs text-muted-foreground mt-1">Money Limit</div>
                   </div>
                 </div>
 
@@ -389,25 +452,25 @@ export function Analytics() {
                   <div className="text-xs text-muted-foreground mt-1">Active Button</div>
                 </div>
 
-                {/* Points Configuration - grouped together */}
+                {/* Money Configuration - grouped together */}
                 <div className="grid grid-cols-3 gap-3">
                   <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
                     <div className="text-xl font-bold">
-                      {sessionData.sessionConfig.pointsAwarded}
+                      {formatMoney(sessionData.sessionConfig.moneyAwarded ?? 5)}
                     </div>
-                    <div className="text-xs text-muted-foreground mt-1">Points Awarded</div>
+                    <div className="text-xs text-muted-foreground mt-1">Money Awarded</div>
                   </div>
                   <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
                     <div className="text-xl font-bold">
-                      {sessionData.sessionConfig.clicksNeeded}
+                      {sessionData.sessionConfig.awardInterval ?? 10}
                     </div>
-                    <div className="text-xs text-muted-foreground mt-1">Clicks Needed</div>
+                    <div className="text-xs text-muted-foreground mt-1">Award Interval</div>
                   </div>
                   <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
                     <div className="text-xl font-bold">
-                      {sessionData.sessionConfig.startingPoints}
+                      {formatMoney(sessionData.sessionConfig.startingMoney ?? 0)}
                     </div>
-                    <div className="text-xs text-muted-foreground mt-1">Starting Points</div>
+                    <div className="text-xs text-muted-foreground mt-1">Starting Money</div>
                   </div>
                 </div>
               </CardContent>
@@ -628,8 +691,8 @@ export function Analytics() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Points Accumulation</CardTitle>
-              <CardDescription>Points earned over time</CardDescription>
+              <CardTitle>Money Accumulation</CardTitle>
+              <CardDescription>Money earned over time</CardDescription>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
@@ -641,14 +704,15 @@ export function Analytics() {
                     stroke="#888"
                   />
                   <YAxis
-                    label={{ value: 'Points', angle: -90, position: 'insideLeft' }}
+                    label={{ value: 'Money (cents)', angle: -90, position: 'insideLeft' }}
                     stroke="#888"
                   />
                   <Tooltip
                     contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
                     labelStyle={{ color: '#fff' }}
+                    formatter={(value: number) => [formatMoney(value), 'Money']}
                   />
-                  <Line type="monotone" dataKey="points" stroke="#b3a1e6" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="money" stroke="#b3a1e6" strokeWidth={2} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </CardContent>

@@ -5,72 +5,120 @@ import { api } from '../lib/api';
 import type { ButtonPosition } from '../types';
 import { cn } from '../lib/utils';
 
+// Format cents as dollars
+function formatMoney(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
 export function Session() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const {
     config,
     setConfig,
-    pointsCounter,
+    moneyCounter,
     clickCounts,
-    limitReached,
+    moneyLimitReached,
+    timeLimitReached,
     sessionActive,
     incrementClick,
-    awardPoints,
-    setLimitReached,
+    awardMoney,
+    setMoneyLimitReached,
+    setTimeLimitReached,
     startSession,
     endSession,
   } = useSessionStore();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [clickIntervalCounter, setClickIntervalCounter] = useState(0);
+  const [awardIntervalCounter, setAwardIntervalCounter] = useState(0);
   const [sessionMessage, setSessionMessage] = useState('');
   const timerIdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // handleSessionEnd must be defined before loadSessionConfig since it's called by it
-  const handleSessionEnd = useCallback(async () => {
-    if (limitReached || !config) return;
+  // Initialize audio element
+  useEffect(() => {
+    audioRef.current = new Audio('/sounds/money.mp3');
+    return () => {
+      audioRef.current = null;
+    };
+  }, []);
 
-    setLimitReached(true);
+  const playAwardSound = useCallback(() => {
+    if (config?.playAwardSound && audioRef.current) {
+      audioRef.current.currentTime = 0;
+      audioRef.current.play().catch(() => {
+        // Ignore audio play errors (e.g., user hasn't interacted with page yet)
+      });
+    }
+  }, [config?.playAwardSound]);
+
+  // Handle time limit reached
+  const handleTimeLimitEnd = useCallback(async () => {
+    if (timeLimitReached || !config) return;
+
+    setTimeLimitReached(true);
     endSession();
-
-    const message = config.sessionLengthType === 'points'
-      ? 'Max points reached, session ended.'
-      : 'Time limit reached. Session ended.';
-    setSessionMessage(message);
+    setSessionMessage('Time limit reached. Session ended.');
 
     // Log session end
     await api.logEvent({
       sessionId: sessionId!,
       event: 'end',
       value: {
-        pointsCounter,
-        pointsEarnedFinal: pointsCounter,
-        limitReached: true,
+        moneyCounter,
+        moneyLimitReached,
+        timeLimitReached: true,
+        clicks: clickCounts,
       },
     });
-  }, [config, sessionId, pointsCounter, limitReached, setLimitReached, endSession]);
+  }, [config, sessionId, moneyCounter, moneyLimitReached, timeLimitReached, clickCounts, setTimeLimitReached, endSession]);
+
+  // Handle money limit reached
+  const handleMoneyLimitEnd = useCallback(async () => {
+    if (moneyLimitReached || !config) return;
+
+    setMoneyLimitReached(true);
+    
+    if (!config.continueAfterMoneyLimit) {
+      endSession();
+      setSessionMessage('Money limit reached. Session ended.');
+
+      // Log session end
+      await api.logEvent({
+        sessionId: sessionId!,
+        event: 'end',
+        value: {
+          moneyCounter,
+          moneyLimitReached: true,
+          timeLimitReached,
+          clicks: clickCounts,
+        },
+      });
+    }
+  }, [config, sessionId, moneyCounter, timeLimitReached, moneyLimitReached, clickCounts, setMoneyLimitReached, endSession]);
 
   const loadSessionConfig = useCallback(async () => {
     try {
-      // Fetch session data which includes config
       const sessionData = await api.getSessionData(sessionId!);
-      // For new sessions, config will have all required fields
+      const cfg = sessionData.sessionConfig;
+      
       const sessionConfig = { 
-        ...sessionData.sessionConfig, 
+        ...cfg, 
         sessionId: sessionId!,
-        // Ensure required fields have defaults (shouldn't be needed for new sessions)
-        sessionLength: sessionData.sessionConfig.sessionLength ?? 60,
-        sessionLengthType: sessionData.sessionConfig.sessionLengthType ?? 'seconds',
-        continueAfterLimit: sessionData.sessionConfig.continueAfterLimit ?? false,
-        pointsAwarded: sessionData.sessionConfig.pointsAwarded ?? 1,
-        clicksNeeded: sessionData.sessionConfig.clicksNeeded ?? 1,
-        startingPoints: sessionData.sessionConfig.startingPoints ?? 0,
-        leftButton: sessionData.sessionConfig.leftButton ?? { shape: 'rectangle', color: '#3b82f6' },
-        middleButton: sessionData.sessionConfig.middleButton ?? { shape: 'rectangle', color: '#22c55e' },
-        rightButton: sessionData.sessionConfig.rightButton ?? { shape: 'rectangle', color: '#ef4444' },
+        configId: cfg.configId ?? '',
+        timeLimit: cfg.timeLimit ?? 60,
+        moneyAwarded: cfg.moneyAwarded ?? 5,
+        moneyLimit: cfg.moneyLimit ?? 1000000,
+        startingMoney: cfg.startingMoney ?? 0,
+        awardInterval: cfg.awardInterval ?? 10,
+        playAwardSound: cfg.playAwardSound ?? true,
+        continueAfterMoneyLimit: cfg.continueAfterMoneyLimit ?? true,
+        leftButton: cfg.leftButton ?? { shape: 'circle', color: '#5ccc96' },
+        middleButton: cfg.middleButton ?? { shape: 'square', color: '#e39400' },
+        rightButton: cfg.rightButton ?? { shape: 'circle', color: '#00a3cc' },
       };
+      
       setConfig(sessionConfig);
       setLoading(false);
 
@@ -79,24 +127,23 @@ export function Session() {
         sessionId: sessionId!,
         event: 'start',
         value: {
-          pointsCounter: sessionConfig.startingPoints,
-          limitReached: false,
+          moneyCounter: sessionConfig.startingMoney,
+          moneyLimitReached: false,
+          timeLimitReached: false,
         },
       });
 
       startSession();
 
-      // Setup timer if session is time-based
-      if (sessionConfig.sessionLengthType === 'seconds') {
-        timerIdRef.current = setTimeout(() => {
-          handleSessionEnd();
-        }, sessionConfig.sessionLength * 1000);
-      }
+      // Setup time limit timer
+      timerIdRef.current = setTimeout(() => {
+        handleTimeLimitEnd();
+      }, sessionConfig.timeLimit * 1000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load session');
       setLoading(false);
     }
-  }, [sessionId, setConfig, startSession, handleSessionEnd]);
+  }, [sessionId, setConfig, startSession, handleTimeLimitEnd]);
 
   useEffect(() => {
     if (!sessionId) {
@@ -104,7 +151,6 @@ export function Session() {
       return;
     }
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional: load config on mount
     loadSessionConfig();
 
     return () => {
@@ -115,7 +161,9 @@ export function Session() {
   }, [sessionId, navigate, loadSessionConfig]);
 
   const handleButtonClick = async (button: ButtonPosition) => {
-    if (!config || (!sessionActive && !config.continueAfterLimit)) return;
+    if (!config) return;
+    // Allow clicks if session active OR if continue after money limit is enabled
+    if (!sessionActive && !(config.continueAfterMoneyLimit && moneyLimitReached)) return;
 
     incrementClick(button);
     const newClickCounts = {
@@ -124,34 +172,35 @@ export function Session() {
       [button]: clickCounts[button] + 1,
     };
 
-    let awarded = 0;
-    let newInterval = clickIntervalCounter;
+    let awardedCents = 0;
+    let newInterval = awardIntervalCounter;
 
     // Check if this was the active button
     if (button === config.buttonActive) {
       newInterval++;
 
-      if (newInterval >= config.clicksNeeded) {
+      if (newInterval >= config.awardInterval) {
         newInterval = 0;
-        awarded = config.pointsAwarded;
-        
-        if (!limitReached) {
-          awardPoints(config.pointsAwarded);
 
-          // Check if we've reached the point limit
-          if (
-            config.sessionLengthType === 'points' &&
-            pointsCounter + config.pointsAwarded >= config.sessionLength
-          ) {
-            const excess = (pointsCounter + config.pointsAwarded) - config.sessionLength;
-            awarded = config.pointsAwarded - excess;
-            await handleSessionEnd();
+        if (!moneyLimitReached) {
+          const potentialNewTotal = moneyCounter + config.moneyAwarded;
+          
+          if (potentialNewTotal >= config.moneyLimit) {
+            // Award only what's needed to reach the limit
+            awardedCents = config.moneyLimit - moneyCounter;
+            awardMoney(awardedCents);
+            playAwardSound();
+            await handleMoneyLimitEnd();
+          } else {
+            awardedCents = config.moneyAwarded;
+            awardMoney(config.moneyAwarded);
+            playAwardSound();
           }
         }
       }
     }
 
-    setClickIntervalCounter(newInterval);
+    setAwardIntervalCounter(newInterval);
 
     // Log the click
     await api.logEvent({
@@ -159,13 +208,11 @@ export function Session() {
       event: 'click',
       value: {
         buttonClicked: button,
-        total: newClickCounts.total,
-        left: newClickCounts.left,
-        middle: newClickCounts.middle,
-        right: newClickCounts.right,
-        awardedPoints: awarded,
-        pointsCounter: pointsCounter + awarded,
-        limitReached,
+        clicks: newClickCounts,
+        awardedCents,
+        moneyCounter: moneyCounter + awardedCents,
+        moneyLimitReached,
+        timeLimitReached,
       },
     });
   };
@@ -173,6 +220,7 @@ export function Session() {
   const getButtonStyle = (position: ButtonPosition) => {
     if (!config) return {};
     const buttonConfig = config[`${position}Button`];
+    if (!buttonConfig) return {};
     
     const baseStyle: React.CSSProperties = {
       backgroundColor: buttonConfig.color,
@@ -212,16 +260,15 @@ export function Session() {
     );
   }
 
-  const isDisabled = !sessionActive && !config.continueAfterLimit;
+  const isDisabled = !sessionActive && !(config.continueAfterMoneyLimit && moneyLimitReached);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-12">
-      {/* Points Display */}
+      {/* Money Display */}
       <div className="text-center">
-        <div className="text-8xl font-bold text-primary animate-in">
-          {pointsCounter}
+        <div className="text-7xl font-bold text-primary animate-in">
+          {formatMoney(moneyCounter)} / {formatMoney(config.moneyLimit)}
         </div>
-        <p className="text-muted-foreground mt-2">Points</p>
       </div>
 
       {/* Buttons */}
@@ -239,7 +286,7 @@ export function Session() {
               'focus:outline-none focus:ring-4 focus:ring-primary/50'
             )}
           >
-            Click
+            Click Me
           </button>
         ))}
       </div>
@@ -251,14 +298,9 @@ export function Session() {
         </div>
       )}
 
-      {/* Session Info */}
+      {/* Session Info - minimal during active session */}
       <div className="text-center text-sm text-muted-foreground space-y-1">
-        <p>Session ID: {config.sessionId}</p>
         <p>Total Clicks: {clickCounts.total}</p>
-        <p>
-          Active Button: <span className="capitalize">{config.buttonActive}</span>
-          {' '} | Clicks for reward: {clickIntervalCounter}/{config.clicksNeeded}
-        </p>
       </div>
     </div>
   );

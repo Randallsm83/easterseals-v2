@@ -11,7 +11,8 @@ export function StartSession() {
   const { configId } = useParams<{ configId: string }>();
   const navigate = useNavigate();
   const [configuration, setConfiguration] = useState<Configuration | null>(null);
-  const [sessionId, setSessionId] = useState('');
+  const [participantId, setParticipantId] = useState('');
+  const [nextSessionId, setNextSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,16 +24,32 @@ export function StartSession() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configId]);
 
+  // Fetch next session ID when participant ID changes
+  useEffect(() => {
+    if (participantId.trim()) {
+      loadNextSessionId(participantId);
+    } else {
+      setNextSessionId(null);
+    }
+  }, [participantId]);
+
   async function loadConfiguration() {
     try {
       const data = await api.getConfiguration(configId!);
       setConfiguration(data);
-      // Generate a default session ID
-      setSessionId(`${data.configId}-${Date.now()}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load configuration');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadNextSessionId(pid: string) {
+    try {
+      const result = await api.getNextSessionId(pid);
+      setNextSessionId(result.nextSessionId);
+    } catch {
+      setNextSessionId('1');
     }
   }
 
@@ -42,8 +59,9 @@ export function StartSession() {
     setSubmitting(true);
 
     try {
-      await api.startSession({ sessionId, configId: configId! });
-      navigate(`/session/${sessionId}`);
+      const result = await api.startSession({ participantId, configId: configId! });
+      // Server returns the auto-generated sessionId (format: participantId-sequenceNumber)
+      navigate(`/session/${result.sessionId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start session');
       setSubmitting(false);
@@ -81,22 +99,24 @@ export function StartSession() {
       <Card>
         <CardHeader>
           <CardTitle>Session Details</CardTitle>
-          <CardDescription>Enter a unique session ID to begin</CardDescription>
+          <CardDescription>Enter participant ID to begin</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleStart} className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="sessionId">Session ID *</Label>
+              <Label htmlFor="participantId">Participant ID *</Label>
               <Input
-                id="sessionId"
-                value={sessionId}
-                onChange={(e) => setSessionId(e.target.value)}
-                placeholder="session-123"
+                id="participantId"
+                value={participantId}
+                onChange={(e) => setParticipantId(e.target.value)}
+                placeholder="e.g., 150"
                 required
               />
-              <p className="text-xs text-muted-foreground">
-                This identifies this specific run of the configuration
-              </p>
+              {participantId.trim() && nextSessionId && (
+                <p className="text-sm text-primary">
+                  This will be session #{nextSessionId} for participant {participantId}
+                </p>
+              )}
             </div>
 
             <div className="space-y-3 pt-4 border-t">
@@ -107,16 +127,20 @@ export function StartSession() {
                   <span className="capitalize">{config.buttonActive}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Points Awarded:</span>
-                  <span>{config.pointsAwarded} per {config.clicksNeeded} clicks</span>
+                  <span className="text-muted-foreground">Money Awarded:</span>
+                  <span>${(config.moneyAwarded / 100).toFixed(2)} per {config.awardInterval} clicks</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Session Limit:</span>
-                  <span>{config.sessionLength} {config.sessionLengthType}</span>
+                  <span className="text-muted-foreground">Time Limit:</span>
+                  <span>{config.timeLimit} seconds</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Starting Points:</span>
-                  <span>{config.startingPoints}</span>
+                  <span className="text-muted-foreground">Money Limit:</span>
+                  <span>${(config.moneyLimit / 100).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Starting Money:</span>
+                  <span>${(config.startingMoney / 100).toFixed(2)}</span>
                 </div>
               </div>
             </div>
