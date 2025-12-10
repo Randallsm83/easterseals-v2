@@ -37,6 +37,7 @@ export function Analytics() {
   // Load participants on mount
   useEffect(() => {
     loadParticipants();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // If URL has sessionId, extract participantId and load

@@ -151,6 +151,7 @@ export function Session() {
       return;
     }
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional: load config on mount triggers state updates
     loadSessionConfig();
 
     return () => {
