@@ -1,4 +1,4 @@
-import type { BaseConfig, Configuration, SessionDataResponse, SessionListItem } from '../types';
+import type { BaseConfig, Configuration, SessionDataResponse, SessionListItem, Participant } from '../types';
 
 // In production, use same-origin /api; in dev, use localhost:3000
 const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:3000/api');
@@ -74,7 +74,7 @@ class ApiClient {
     return this.request<SessionDataResponse>(`/sessions/${sessionId}/data`);
   }
 
-  async startSession(data: { sessionId: string; configId: string }): Promise<{ message: string; sessionId: string; config: BaseConfig }> {
+  async startSession(data: { participantId: string; configId: string }): Promise<{ message: string; sessionId: string; config: BaseConfig }> {
     return this.request('/sessions/start', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -104,6 +104,19 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify(data),
     });
+  }
+
+  // Participants
+  async getParticipants(): Promise<Participant[]> {
+    return this.request<Participant[]>('/participants');
+  }
+
+  async getParticipantSessions(participantId: string): Promise<SessionListItem[]> {
+    return this.request<SessionListItem[]>(`/participants/${participantId}/sessions`);
+  }
+
+  async getNextSessionId(participantId: string): Promise<{ nextSessionId: string }> {
+    return this.request<{ nextSessionId: string }>(`/participants/${participantId}/next-session-id`);
   }
 }
 

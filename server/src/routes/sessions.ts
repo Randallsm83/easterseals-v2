@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 interface SessionRow {
   sessionId: string;
+  participantId: string;
   configId: string;
   configName: string;
   config: string;
@@ -56,7 +57,7 @@ function normalizeEndValue(value: Record<string, unknown>) {
 const router = Router();
 
 const StartSessionSchema = z.object({
-  sessionId: z.string().min(1).max(100),
+  participantId: z.string().min(1).max(100),
   configId: z.string(),
 });
 
@@ -86,6 +87,7 @@ router.get('/', (_req, res) => {
 
       return {
         sessionId: session.sessionId,
+        participantId: session.participantId,
         configId: session.configId,
         configName: session.configName,
         startedAt: session.startedAt,
@@ -170,15 +172,8 @@ router.post('/start', (req, res) => {
       return;
     }
 
-    const { sessionId, configId } = result.data;
+    const { participantId, configId } = result.data;
     
-    // Check if session already exists
-    const existing = statements.getSession.get(sessionId);
-    if (existing) {
-      res.status(409).json({ error: 'Session ID already exists' });
-      return;
-    }
-
     // Check if config exists
     const config = statements.getConfig.get(configId) as { config: string } | undefined;
     if (!config) {
@@ -186,7 +181,12 @@ router.post('/start', (req, res) => {
       return;
     }
 
-    statements.insertSession.run(sessionId, configId);
+    // Auto-generate sessionId: participantId-sequenceNumber
+    const countResult = statements.getMaxSessionIdForParticipant.get(participantId) as { sessionCount: number };
+    const sequenceNumber = countResult.sessionCount + 1;
+    const sessionId = `${participantId}-${sequenceNumber}`;
+
+    statements.insertSession.run(sessionId, participantId, configId);
     
     res.status(201).json({ 
       message: 'Session started successfully',

@@ -6,6 +6,7 @@ import { initializeDatabase } from './db/index.js';
 import configurationsRouter from './routes/configurations.js';
 import sessionsRouter from './routes/sessions.js';
 import eventsRouter from './routes/events.js';
+import participantsRouter from './routes/participants.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -40,6 +41,7 @@ app.get('/health', (_req, res) => {
 app.use('/api/configurations', configurationsRouter);
 app.use('/api/sessions', sessionsRouter);
 app.use('/api/events', eventsRouter);
+app.use('/api/participants', participantsRouter);
 
 // Serve static files in production
 if (isProd) {

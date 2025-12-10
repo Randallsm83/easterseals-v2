@@ -10,16 +10,20 @@ export interface ButtonConfig {
 
 // Base configuration without sessionId (used for templates)
 export interface BaseConfig {
-  sessionLength: number;
-  sessionLengthType: SessionLengthType;
-  continueAfterLimit: boolean;
+  // Time limit in seconds
+  timeLimit: number;
+  // Money configuration (stored in cents)
+  moneyAwarded: number;
+  moneyLimit: number;
+  startingMoney: number;
+  awardInterval: number;
+  playAwardSound: boolean;
+  continueAfterMoneyLimit: boolean;
+  // Button configuration
   buttonActive: ButtonPosition;
   leftButton: ButtonConfig;
   middleButton: ButtonConfig;
   rightButton: ButtonConfig;
-  pointsAwarded: number;
-  clicksNeeded: number;
-  startingPoints: number;
 }
 
 // Stored configuration with metadata
@@ -32,16 +36,18 @@ export interface Configuration {
 
 export interface SessionConfig {
   sessionId: string;
-  sessionLength: number;
-  sessionLengthType: SessionLengthType;
-  continueAfterLimit: boolean;
+  configId: string;
+  timeLimit: number;
+  moneyAwarded: number;
+  moneyLimit: number;
+  startingMoney: number;
+  awardInterval: number;
+  playAwardSound: boolean;
+  continueAfterMoneyLimit: boolean;
   buttonActive: ButtonPosition;
   leftButton: ButtonConfig;
   middleButton: ButtonConfig;
   rightButton: ButtonConfig;
-  pointsAwarded: number;
-  clicksNeeded: number;
-  startingPoints: number;
 }
 
 // Extended config type for viewing sessions (includes legacy field names)
@@ -57,6 +63,10 @@ export interface SessionConfigExtended extends Partial<SessionConfig> {
   middleButtonColor?: string;
   rightButtonShape?: string;
   rightButtonColor?: string;
+  // Points-based fields for backward compatibility
+  pointsAwarded?: number;
+  clicksNeeded?: number;
+  startingPoints?: number;
 }
 
 export interface ClickInfo {
@@ -64,12 +74,13 @@ export interface ClickInfo {
   left: number;
   middle: number;
   right: number;
-  awardedPoints: number;
+  awardedCents: number;
 }
 
 export interface SessionInfo {
-  pointsCounter: number;
-  limitReached: boolean;
+  moneyCounter: number;
+  moneyLimitReached: boolean;
+  timeLimitReached: boolean;
 }
 
 export interface ClickEvent {
@@ -84,8 +95,9 @@ export interface SessionStartEvent {
   sessionId: string;
   timestamp: string;
   value: {
-    pointsCounter: number;
-    limitReached: boolean;
+    moneyCounter: number;
+    moneyLimitReached: boolean;
+    timeLimitReached: boolean;
   };
 }
 
@@ -93,9 +105,15 @@ export interface SessionEndEvent {
   sessionId: string;
   timestamp: string;
   value: {
-    pointsCounter: number;
-    pointsEarnedFinal: number;
-    limitReached: boolean;
+    moneyCounter: number;
+    moneyLimitReached: boolean;
+    timeLimitReached: boolean;
+    clicks: {
+      total: number;
+      left: number;
+      middle: number;
+      right: number;
+    };
   };
 }
 
@@ -108,13 +126,14 @@ export interface SessionDataResponse {
 
 export interface SessionListItem {
   sessionId: string;
+  participantId: string;
   configId: string;
   configName: string;
   startedAt: string;
   endedAt: string | null;
   totalClicks: number;
   duration: number | null;
-  finalPoints: number | null;
+  finalMoney: number | null;
 }
 
 export interface SessionStats {
@@ -125,7 +144,7 @@ export interface SessionStats {
   accuracy: number;
   clicksPerSecond: number;
   averageTimeBetweenClicks: number;
-  pointsEarned: number;
+  moneyEarned: number;
   sessionDuration: number;
 }
 
@@ -137,6 +156,11 @@ export interface ChartDataPoint {
   middle: number;
   right: number;
   total: number;
-  points: number;
+  money: number;
   buttonClicked: ButtonPosition;
+}
+
+// Participant type for cascading dropdowns
+export interface Participant {
+  participantId: string;
 }

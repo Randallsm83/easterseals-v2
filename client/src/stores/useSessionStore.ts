@@ -3,21 +3,23 @@ import type { SessionConfig } from '../types';
 
 interface SessionState {
   config: SessionConfig | null;
-  pointsCounter: number;
+  moneyCounter: number; // in cents
   clickCounts: {
     total: number;
     left: number;
     middle: number;
     right: number;
   };
-  limitReached: boolean;
+  moneyLimitReached: boolean;
+  timeLimitReached: boolean;
   sessionActive: boolean;
   
   // Actions
   setConfig: (config: SessionConfig) => void;
   incrementClick: (button: 'left' | 'middle' | 'right') => void;
-  awardPoints: (points: number) => void;
-  setLimitReached: (reached: boolean) => void;
+  awardMoney: (cents: number) => void;
+  setMoneyLimitReached: (reached: boolean) => void;
+  setTimeLimitReached: (reached: boolean) => void;
   startSession: () => void;
   endSession: () => void;
   resetSession: () => void;
@@ -25,20 +27,21 @@ interface SessionState {
 
 export const useSessionStore = create<SessionState>((set) => ({
   config: null,
-  pointsCounter: 0,
+  moneyCounter: 0,
   clickCounts: {
     total: 0,
     left: 0,
     middle: 0,
     right: 0,
   },
-  limitReached: false,
+  moneyLimitReached: false,
+  timeLimitReached: false,
   sessionActive: false,
 
   setConfig: (config) => 
     set({ 
       config, 
-      pointsCounter: config.startingPoints 
+      moneyCounter: config.startingMoney 
     }),
 
   incrementClick: (button) =>
@@ -50,13 +53,16 @@ export const useSessionStore = create<SessionState>((set) => ({
       },
     })),
 
-  awardPoints: (points) =>
+  awardMoney: (cents) =>
     set((state) => ({
-      pointsCounter: state.pointsCounter + points,
+      moneyCounter: state.moneyCounter + cents,
     })),
 
-  setLimitReached: (reached) => 
-    set({ limitReached: reached }),
+  setMoneyLimitReached: (reached) => 
+    set({ moneyLimitReached: reached }),
+
+  setTimeLimitReached: (reached) => 
+    set({ timeLimitReached: reached }),
 
   startSession: () => 
     set({ sessionActive: true }),
@@ -66,14 +72,15 @@ export const useSessionStore = create<SessionState>((set) => ({
 
   resetSession: () =>
     set((state) => ({
-      pointsCounter: state.config?.startingPoints || 0,
+      moneyCounter: state.config?.startingMoney || 0,
       clickCounts: {
         total: 0,
         left: 0,
         middle: 0,
         right: 0,
       },
-      limitReached: false,
+      moneyLimitReached: false,
+      timeLimitReached: false,
       sessionActive: false,
     })),
 }));
