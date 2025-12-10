@@ -111,14 +111,14 @@ for (const oldConfig of oldConfigs) {
     // Use configId as name if no name field
     const name = configData.name || `Config ${oldConfig.configId}`;
     
-    // Transform config to new format
+    // Transform config to new format - use parseFloat for decimal cents
     const newConfig = {
-      timeLimit: parseInt(configData.timeLimit) || 60,
-      moneyAwarded: parseInt(configData.moneyAwarded) || 5,
-      moneyLimit: parseInt(configData.moneyLimit) || 100,
-      startingMoney: parseInt(configData.startingMoney) || 0,
-      awardInterval: parseInt(configData.awardInterval) || 10,
-      playAwardSound: true,
+      timeLimit: parseFloat(configData.timeLimit) || 60,
+      moneyAwarded: parseFloat(configData.moneyAwarded) || 0,
+      moneyLimit: parseFloat(configData.moneyLimit) || 100,
+      startingMoney: parseFloat(configData.startingMoney) || 0,
+      awardInterval: parseFloat(configData.awardInterval) || 10,
+      playAwardSound: configData.playAwardSound === 'on',
       continueAfterMoneyLimit: configData.continueAfterMoneyLimit === 'on',
       buttonActive: configData.buttonActive || 'left',
       leftButton: {

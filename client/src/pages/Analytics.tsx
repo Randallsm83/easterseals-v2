@@ -18,9 +18,15 @@ import { api } from '../lib/api';
 import type { SessionDataResponse, SessionListItem, ChartDataPoint, ButtonPosition, Participant } from '../types';
 import { calculateAccuracy, calculateClickRate, formatDuration, parseSqliteDate, formatTimestamp } from '../lib/utils';
 
-// Format cents as dollars
+// Format money - display raw value (cents) like old app
 function formatMoney(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
+  return String(cents);
+}
+
+// Extract session number from composite sessionId (e.g., "100-1" -> "1")
+function getSessionNumber(sessionId: string): string {
+  const parts = sessionId.split('-');
+  return parts.length > 1 ? parts[parts.length - 1] : sessionId;
 }
 
 export function Analytics() {
@@ -201,11 +207,25 @@ export function Analytics() {
       (c) => c.buttonClicked === sessionData.sessionConfig.buttonActive
     ).length;
 
-    // Get final money - prefer endEvent, fallback to last click's moneyCounter, or compute from chartData
-    let finalMoney = sessionData.endEvent?.value?.moneyCounter 
-      ?? sessionData.allClicks[sessionData.allClicks.length - 1]?.sessionInfo?.moneyCounter;
+    // Get final money from various sources - old event format stores in click value directly
+    let finalMoney: number | undefined;
     
-    // If still undefined (old format), use chartData's last money value
+    // Try endEvent first
+    if (sessionData.endEvent?.value?.moneyCounter !== undefined) {
+      finalMoney = sessionData.endEvent.value.moneyCounter;
+    }
+    // Try last click's sessionInfo
+    else if (sessionData.allClicks.length > 0) {
+      const lastClick = sessionData.allClicks[sessionData.allClicks.length - 1];
+      // Old format: value is JSON string with moneyCounter
+      if (typeof lastClick.clickInfo === 'object' && 'moneyCounter' in lastClick.clickInfo) {
+        finalMoney = (lastClick.clickInfo as { moneyCounter: number }).moneyCounter;
+      } else if (lastClick.sessionInfo?.moneyCounter !== undefined) {
+        finalMoney = lastClick.sessionInfo.moneyCounter;
+      }
+    }
+    
+    // Fallback to computed chartData
     if (finalMoney === undefined && chartData.length > 0) {
       finalMoney = chartData[chartData.length - 1].money;
     }
@@ -335,7 +355,7 @@ export function Analytics() {
                 <option value="">Select a session...</option>
                 {participantSessions.map((session) => (
                   <option key={session.sessionId} value={session.sessionId}>
-                    {session.sessionId} - {session.startedAt ? formatTimestamp(session.startedAt) : 'N/A'}
+                    {getSessionNumber(session.sessionId)} - {session.startedAt ? formatTimestamp(session.startedAt) : 'N/A'}
                   </option>
                 ))}
               </select>
@@ -427,10 +447,10 @@ export function Analytics() {
               </CardHeader>
               <CardContent className="space-y-4">
                 {/* Session Limits - grouped together */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-4">
                   <div className="rounded-lg border border-border/50 p-4 text-center">
                     <div className="text-xl font-bold">
-                      {sessionData.sessionConfig.timeLimit ?? 60}s
+                      {sessionData.sessionConfig.timeLimit ?? 60}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">Time Limit</div>
                   </div>
@@ -439,6 +459,12 @@ export function Analytics() {
                       {formatMoney(sessionData.sessionConfig.moneyLimit ?? 100)}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">Money Limit</div>
+                  </div>
+                  <div className="rounded-lg border border-border/50 p-4 text-center">
+                    <div className="text-xl font-bold">
+                      {sessionData.sessionConfig.continueAfterMoneyLimit ? 'off' : 'on'}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">End At Limit</div>
                   </div>
                 </div>
 
