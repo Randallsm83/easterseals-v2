@@ -56,7 +56,21 @@ export function Session() {
     try {
       // Fetch session data which includes config
       const sessionData = await api.getSessionData(sessionId!);
-      const sessionConfig = { ...sessionData.sessionConfig, sessionId: sessionId! };
+      // For new sessions, config will have all required fields
+      const sessionConfig = { 
+        ...sessionData.sessionConfig, 
+        sessionId: sessionId!,
+        // Ensure required fields have defaults (shouldn't be needed for new sessions)
+        sessionLength: sessionData.sessionConfig.sessionLength ?? 60,
+        sessionLengthType: sessionData.sessionConfig.sessionLengthType ?? 'seconds',
+        continueAfterLimit: sessionData.sessionConfig.continueAfterLimit ?? false,
+        pointsAwarded: sessionData.sessionConfig.pointsAwarded ?? 1,
+        clicksNeeded: sessionData.sessionConfig.clicksNeeded ?? 1,
+        startingPoints: sessionData.sessionConfig.startingPoints ?? 0,
+        leftButton: sessionData.sessionConfig.leftButton ?? { shape: 'rectangle', color: '#3b82f6' },
+        middleButton: sessionData.sessionConfig.middleButton ?? { shape: 'rectangle', color: '#22c55e' },
+        rightButton: sessionData.sessionConfig.rightButton ?? { shape: 'rectangle', color: '#ef4444' },
+      };
       setConfig(sessionConfig);
       setLoading(false);
 
