@@ -141,9 +141,15 @@ export function Analytics() {
     if (!sessionData || !sessionData.startEvent) return null;
 
     const startTime = parseSqliteDate(sessionData.startEvent.timestamp).getTime();
-    const endTime = sessionData.endEvent 
-      ? parseSqliteDate(sessionData.endEvent.timestamp).getTime()
-      : Date.now();
+    // For sessions without end event, use last click timestamp instead of Date.now()
+    let endTime: number;
+    if (sessionData.endEvent) {
+      endTime = parseSqliteDate(sessionData.endEvent.timestamp).getTime();
+    } else if (sessionData.allClicks.length > 0) {
+      endTime = parseSqliteDate(sessionData.allClicks[sessionData.allClicks.length - 1].timestamp).getTime();
+    } else {
+      endTime = startTime; // No clicks, duration is 0
+    }
     const duration = (endTime - startTime) / 1000;
 
     const totalClicks = sessionData.allClicks.length;
@@ -363,13 +369,13 @@ export function Analytics() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="rounded-lg border border-border/50 p-4 text-center">
                     <div className="text-xl font-bold">
-                      {sessionData.sessionConfig.sessionLength} {sessionData.sessionConfig.sessionLengthType}
+                      {sessionData.sessionConfig.sessionLimit ?? sessionData.sessionConfig.sessionLength ?? 'N/A'}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">Session Limit</div>
                   </div>
                   <div className="rounded-lg border border-border/50 p-4 text-center">
                     <div className="text-xl font-bold">
-                      {sessionData.sessionConfig.continueAfterLimit ? 'No' : 'Yes'}
+                      {(sessionData.sessionConfig.endAtLimit ?? !sessionData.sessionConfig.continueAfterLimit) ? 'Yes' : 'No'}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">End at Limit</div>
                   </div>

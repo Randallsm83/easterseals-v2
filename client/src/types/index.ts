@@ -44,6 +44,21 @@ export interface SessionConfig {
   startingPoints: number;
 }
 
+// Extended config type for viewing sessions (includes legacy field names)
+export interface SessionConfigExtended extends Partial<SessionConfig> {
+  buttonActive: ButtonPosition;
+  // Legacy format fields (from old migrated data)
+  sessionLimit?: number | string;
+  pointsLimit?: number;
+  endAtLimit?: boolean;
+  leftButtonShape?: string;
+  leftButtonColor?: string;
+  middleButtonShape?: string;
+  middleButtonColor?: string;
+  rightButtonShape?: string;
+  rightButtonColor?: string;
+}
+
 export interface ClickInfo {
   total: number;
   left: number;
@@ -85,7 +100,7 @@ export interface SessionEndEvent {
 }
 
 export interface SessionDataResponse {
-  sessionConfig: SessionConfig;
+  sessionConfig: SessionConfigExtended;
   startEvent: SessionStartEvent | null;
   endEvent: SessionEndEvent | null;
   allClicks: ClickEvent[];
