@@ -477,7 +477,7 @@ export function Analytics() {
                 </div>
 
                 {/* Money Configuration - grouped together */}
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
                     <div className="text-xl font-bold">
                       {formatMoney(sessionData.sessionConfig.moneyAwarded ?? 5)}
@@ -495,6 +495,12 @@ export function Analytics() {
                       {formatMoney(sessionData.sessionConfig.startingMoney ?? 0)}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">Starting Money</div>
+                  </div>
+                  <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
+                    <div className="text-xl font-bold">
+                      {sessionData.sessionConfig.playAwardSound ? 'on' : 'off'}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">Award Sound</div>
                   </div>
                 </div>
               </CardContent>
