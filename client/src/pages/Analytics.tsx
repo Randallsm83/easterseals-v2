@@ -19,7 +19,7 @@ import type { SessionDataResponse, SessionListItem, ChartDataPoint, ButtonPositi
 import { calculateAccuracy, calculateClickRate, formatDuration, parseSqliteDate, formatTimestamp } from '../lib/utils';
 
 export function Analytics() {
-  const { sessionId: urlSessionId } = useParams<{ sessionId: string }>();
+  const { sessionId: urlSessionId, configId: urlConfigId } = useParams<{ sessionId?: string; configId?: string }>();
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(urlSessionId || null);
   const [sessionData, setSessionData] = useState<SessionDataResponse | null>(null);
@@ -28,7 +28,7 @@ export function Analytics() {
   useEffect(() => {
     loadSessions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [urlConfigId]);
 
   useEffect(() => {
     if (urlSessionId) {
@@ -39,7 +39,10 @@ export function Analytics() {
 
   async function loadSessions() {
     try {
-      const data = await api.getSessions();
+      // If configId in URL, only fetch sessions for that config
+      const data = urlConfigId 
+        ? await api.getConfigurationSessions(urlConfigId)
+        : await api.getSessions();
       setSessions(data);
       
       if (!urlSessionId && data.length > 0) {

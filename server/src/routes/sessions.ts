@@ -19,6 +19,40 @@ interface EventRow {
   timestamp: string;
 }
 
+// Helper to normalize click event data from old/new formats
+function normalizeClickValue(value: Record<string, unknown>) {
+  // Old format: { clicks: { total, left, middle, right }, buttonClicked, moneyCounter, ... }
+  // New format: { total, left, middle, right, buttonClicked, pointsCounter, ... }
+  
+  const clicks = (value.clicks as Record<string, number>) || value;
+  const pointsCounter = (value.pointsCounter ?? value.moneyCounter ?? 0) as number;
+  const limitReached = (value.limitReached ?? value.moneyLimitReached ?? value.timeLimitReached ?? false) as boolean;
+  
+  return {
+    buttonClicked: value.buttonClicked as string,
+    clickInfo: {
+      total: (clicks.total ?? 0) as number,
+      left: (clicks.left ?? 0) as number,
+      middle: (clicks.middle ?? 0) as number,
+      right: (clicks.right ?? 0) as number,
+      awardedPoints: (value.awardedPoints ?? value.awardedCents ?? 0) as number,
+    },
+    sessionInfo: {
+      pointsCounter,
+      limitReached,
+    },
+  };
+}
+
+// Helper to normalize end event data
+function normalizeEndValue(value: Record<string, unknown>) {
+  const clicks = (value.clicks as Record<string, number>) || value;
+  return {
+    pointsEarnedFinal: (value.pointsEarnedFinal ?? value.pointsCounter ?? value.moneyCounter ?? 0) as number,
+    totalClicks: (clicks.total ?? 0) as number,
+  };
+}
+
 const router = Router();
 
 const StartSessionSchema = z.object({
@@ -39,8 +73,8 @@ router.get('/', (_req, res) => {
       let duration = null;
 
       if (endEvent) {
-        const endData = JSON.parse(endEvent.value);
-        finalPoints = endData.pointsEarnedFinal || endData.pointsCounter;
+        const endData = normalizeEndValue(JSON.parse(endEvent.value));
+        finalPoints = endData.pointsEarnedFinal;
         
         const startEvent = statements.getSessionEventByType.get(session.sessionId, 'start') as EventRow | undefined;
         if (startEvent && session.endedAt) {
@@ -101,21 +135,11 @@ router.get('/:sessionId/data', (req, res) => {
 
     const allClicks = clickRows.map((row) => {
       const value = JSON.parse(row.value);
+      const normalized = normalizeClickValue(value);
       return {
         sessionId,
         timestamp: row.timestamp,
-        buttonClicked: value.buttonClicked,
-        clickInfo: {
-          total: value.total,
-          left: value.left,
-          middle: value.middle,
-          right: value.right,
-          awardedPoints: value.awardedPoints || 0,
-        },
-        sessionInfo: {
-          pointsCounter: value.pointsCounter,
-          limitReached: value.limitReached || false,
-        },
+        ...normalized,
       };
     });
 
