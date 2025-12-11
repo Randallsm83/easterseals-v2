@@ -660,6 +660,7 @@ export function Analytics() {
                     domain={[0, 'auto']}
                     stroke="#888"
                     tick={{ fill: '#888' }}
+                    tickFormatter={(value: number) => Math.round(value).toString()}
                     label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
                   />
                   <YAxis
@@ -726,6 +727,7 @@ export function Analytics() {
                     domain={[0, 'auto']}
                     stroke="#888"
                     tick={{ fill: '#888' }}
+                    tickFormatter={(value: number) => Math.round(value).toString()}
                     label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
                   />
                   <YAxis
@@ -773,11 +775,15 @@ export function Analytics() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#444" />
                   <XAxis
                     dataKey="timeElapsed"
+                    type="number"
+                    domain={[0, 'auto']}
                     stroke="#888"
                     tick={{ fill: '#888' }}
+                    tickFormatter={(value: number) => Math.round(value).toString()}
                     label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
                   />
                   <YAxis
+                    domain={[0, 'auto']}
                     stroke="#888"
                     tick={{ fill: '#888' }}
                     tickFormatter={(value: number) => `$${(value / 100).toFixed(0)}`}
@@ -787,8 +793,9 @@ export function Analytics() {
                     contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
                     labelStyle={{ color: '#fff' }}
                     formatter={(value: number) => [formatMoney(value), 'Money']}
+                    labelFormatter={(value: number) => `Time: ${Math.round(value)}s`}
                   />
-                  <Line type="monotone" dataKey="money" stroke="#b3a1e6" strokeWidth={2} dot={false} />
+                  <Line type="stepAfter" dataKey="money" stroke="#b3a1e6" strokeWidth={2} dot={{ r: 3, fill: '#b3a1e6' }} />
                 </LineChart>
               </ResponsiveContainer>
             </CardContent>

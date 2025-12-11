@@ -1,5 +1,5 @@
 // Re-export from server types (keep types in sync)
-export type ButtonShape = 'rectangle' | 'square' | 'circle';
+export type ButtonShape = 'none' | 'rectangle' | 'square' | 'circle';
 export type ButtonPosition = 'left' | 'middle' | 'right';
 export type SessionLengthType = 'seconds' | 'points';
 
@@ -20,7 +20,7 @@ export interface BaseConfig {
   playAwardSound: boolean;
   continueAfterMoneyLimit: boolean;
   // Button configuration
-  buttonActive: ButtonPosition;
+  buttonActive: ButtonPosition | null;
   leftButton: ButtonConfig;
   middleButton: ButtonConfig;
   rightButton: ButtonConfig;
@@ -45,7 +45,7 @@ export interface SessionConfig {
   awardInterval: number;
   playAwardSound: boolean;
   continueAfterMoneyLimit: boolean;
-  buttonActive: ButtonPosition;
+  buttonActive: ButtonPosition | null;
   leftButton: ButtonConfig;
   middleButton: ButtonConfig;
   rightButton: ButtonConfig;
