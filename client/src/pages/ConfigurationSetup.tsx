@@ -27,6 +27,17 @@ export function ConfigurationSetup() {
     rightButton: { shape: 'circle', color: '#00a3cc' },
   });
 
+  const handleButtonCardClick = (position: 'left' | 'middle' | 'right') => {
+    const buttonConfig = formData[`${position}Button`];
+    // Don't allow setting 'none' buttons as active
+    if (buttonConfig.shape === 'none') return;
+    // Toggle off if already active, otherwise set as active
+    setFormData(prev => ({
+      ...prev,
+      buttonActive: prev.buttonActive === position ? null : position,
+    }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -44,13 +55,20 @@ export function ConfigurationSetup() {
   };
 
   const updateButton = (position: 'left' | 'middle' | 'right', field: 'shape' | 'color', value: string) => {
-    setFormData(prev => ({
-      ...prev,
-      [`${position}Button`]: {
-        ...prev[`${position}Button`],
-        [field]: value,
-      },
-    }));
+    setFormData(prev => {
+      const newData = {
+        ...prev,
+        [`${position}Button`]: {
+          ...prev[`${position}Button`],
+          [field]: value,
+        },
+      };
+      // If setting shape to 'none' and this button is active, clear active
+      if (field === 'shape' && value === 'none' && prev.buttonActive === position) {
+        newData.buttonActive = null;
+      }
+      return newData;
+    });
   };
 
   return (
@@ -101,20 +119,23 @@ export function ConfigurationSetup() {
               <CardDescription>Customize button appearance and active button</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <p className="text-sm text-muted-foreground">Click a button card to set it as active (awards money)</p>
+              <p className="text-sm text-muted-foreground">Click a button card to toggle it as active (awards money). Buttons with "None" shape cannot be active.</p>
 
               <div className="grid gap-4 md:grid-cols-3">
                 {(['left', 'middle', 'right'] as const).map((position) => {
                   const isActive = formData.buttonActive === position;
-                  const buttonColor = formData[`${position}Button`].color;
+                  const buttonConfig = formData[`${position}Button`];
+                  const isNone = buttonConfig.shape === 'none';
                   return (
                     <div 
                       key={position} 
-                      onClick={() => setFormData({ ...formData, buttonActive: position })}
-                      className={`relative rounded-lg p-4 space-y-3 cursor-pointer transition-all ${
-                        isActive 
-                          ? 'ring-2 ring-primary bg-primary/5' 
-                          : 'border border-border hover:border-primary/50'
+                      onClick={() => handleButtonCardClick(position)}
+                      className={`relative rounded-lg p-4 space-y-3 transition-all ${
+                        isNone 
+                          ? 'border border-dashed border-border opacity-60 cursor-not-allowed'
+                          : isActive 
+                            ? 'ring-2 ring-primary bg-primary/5 cursor-pointer' 
+                            : 'border border-border hover:border-primary/50 cursor-pointer'
                       }`}
                     >
                       {isActive && (
@@ -122,50 +143,58 @@ export function ConfigurationSetup() {
                           Active
                         </div>
                       )}
-                      <div className="flex items-center gap-3">
-                        <div 
-                          className="w-8 h-8 rounded"
-                          style={{ 
-                            backgroundColor: buttonColor,
-                            borderRadius: formData[`${position}Button`].shape === 'circle' ? '50%' : formData[`${position}Button`].shape === 'square' ? '4px' : '4px'
-                          }}
-                        />
+                      <div className="flex items-center justify-between">
                         <h4 className="font-medium capitalize">{position}</h4>
+                        {!isNone && (
+                          <div 
+                            className="w-8 h-8 flex-shrink-0"
+                            style={{ 
+                              backgroundColor: buttonConfig.color,
+                              borderRadius: buttonConfig.shape === 'circle' ? '50%' : '4px',
+                              aspectRatio: buttonConfig.shape === 'rectangle' ? '2/1' : '1/1',
+                              width: buttonConfig.shape === 'rectangle' ? '48px' : '32px',
+                              height: '32px',
+                            }}
+                          />
+                        )}
                       </div>
                       <div className="space-y-3">
                         <div className="space-y-1">
                           <Label className="text-xs">Shape</Label>
                           <select
-                            value={formData[`${position}Button`].shape}
+                            value={buttonConfig.shape}
                             onChange={(e) => { e.stopPropagation(); updateButton(position, 'shape', e.target.value); }}
                             onClick={(e) => e.stopPropagation()}
                             className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
                           >
+                            <option value="none">None</option>
                             <option value="circle">Circle</option>
                             <option value="square">Square</option>
                             <option value="rectangle">Rectangle</option>
                           </select>
                         </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs">Color</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              type="color"
-                              value={buttonColor}
-                              onChange={(e) => updateButton(position, 'color', e.target.value)}
-                              onClick={(e) => e.stopPropagation()}
-                              className="w-12 h-9 cursor-pointer p-1"
-                            />
-                            <Input
-                              type="text"
-                              value={buttonColor}
-                              onChange={(e) => updateButton(position, 'color', e.target.value)}
-                              onClick={(e) => e.stopPropagation()}
-                              className="flex-1 h-9 text-xs"
-                              pattern="^#[0-9A-Fa-f]{6}$"
-                            />
+                        {!isNone && (
+                          <div className="space-y-1">
+                            <Label className="text-xs">Color</Label>
+                            <div className="flex gap-2">
+                              <Input
+                                type="color"
+                                value={buttonConfig.color}
+                                onChange={(e) => updateButton(position, 'color', e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-12 h-9 cursor-pointer p-1"
+                              />
+                              <Input
+                                type="text"
+                                value={buttonConfig.color}
+                                onChange={(e) => updateButton(position, 'color', e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex-1 h-9 text-xs"
+                                pattern="^#[0-9A-Fa-f]{6}$"
+                              />
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </div>
                     </div>
                   );
