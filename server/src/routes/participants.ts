@@ -5,6 +5,7 @@ interface ParticipantRow {
   participantId: string;
   sessionCount: number;
   lastSessionDate: string | null;
+  isArchived?: number;
 }
 
 interface SessionRow {
@@ -27,9 +28,21 @@ interface EventRow {
 const router = Router();
 
 // Get all distinct participants with session counts
-router.get('/', (_req, res) => {
+router.get('/', (req, res) => {
   try {
-    const participants = statements.getParticipantsWithStats.all() as ParticipantRow[];
+    const includeArchived = req.query.includeArchived === 'true';
+    const archivedOnly = req.query.archivedOnly === 'true';
+    
+    let participants: ParticipantRow[];
+    if (archivedOnly) {
+      participants = statements.getArchivedParticipantsWithStats.all() as ParticipantRow[];
+    } else if (includeArchived) {
+      const active = statements.getParticipantsWithStats.all() as ParticipantRow[];
+      const archived = statements.getArchivedParticipantsWithStats.all() as ParticipantRow[];
+      participants = [...active, ...archived];
+    } else {
+      participants = statements.getParticipantsWithStats.all() as ParticipantRow[];
+    }
     res.json(participants);
   } catch (error) {
     console.error('Error fetching participants:', error);
@@ -92,6 +105,30 @@ router.get('/:participantId/next-session-id', (req, res) => {
   } catch (error) {
     console.error('Error getting next session ID:', error);
     res.status(500).json({ error: 'Failed to get next session ID' });
+  }
+});
+
+// Archive a participant
+router.post('/:participantId/archive', (req, res) => {
+  try {
+    const { participantId } = req.params;
+    statements.archiveParticipant.run(participantId);
+    res.json({ message: 'Participant archived successfully' });
+  } catch (error) {
+    console.error('Error archiving participant:', error);
+    res.status(500).json({ error: 'Failed to archive participant' });
+  }
+});
+
+// Unarchive a participant
+router.post('/:participantId/unarchive', (req, res) => {
+  try {
+    const { participantId } = req.params;
+    statements.unarchiveParticipant.run(participantId);
+    res.json({ message: 'Participant unarchived successfully' });
+  } catch (error) {
+    console.error('Error unarchiving participant:', error);
+    res.status(500).json({ error: 'Failed to unarchive participant' });
   }
 });
 

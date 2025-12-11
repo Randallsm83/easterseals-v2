@@ -33,8 +33,12 @@ class ApiClient {
   }
 
   // Configurations
-  async getConfigurations(): Promise<Configuration[]> {
-    return this.request<Configuration[]>('/configurations');
+  async getConfigurations(options?: { includeArchived?: boolean; archivedOnly?: boolean }): Promise<Configuration[]> {
+    const params = new URLSearchParams();
+    if (options?.includeArchived) params.set('includeArchived', 'true');
+    if (options?.archivedOnly) params.set('archivedOnly', 'true');
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return this.request<Configuration[]>(`/configurations${query}`);
   }
 
   async getConfiguration(configId: string): Promise<Configuration> {
@@ -58,6 +62,18 @@ class ApiClient {
   async deleteConfiguration(configId: string): Promise<{ message: string }> {
     return this.request(`/configurations/${configId}`, {
       method: 'DELETE',
+    });
+  }
+
+  async archiveConfiguration(configId: string): Promise<{ message: string }> {
+    return this.request(`/configurations/${configId}/archive`, {
+      method: 'POST',
+    });
+  }
+
+  async unarchiveConfiguration(configId: string): Promise<{ message: string }> {
+    return this.request(`/configurations/${configId}/unarchive`, {
+      method: 'POST',
     });
   }
 
@@ -107,8 +123,24 @@ class ApiClient {
   }
 
   // Participants
-  async getParticipants(): Promise<Participant[]> {
-    return this.request<Participant[]>('/participants');
+  async getParticipants(options?: { includeArchived?: boolean; archivedOnly?: boolean }): Promise<Participant[]> {
+    const params = new URLSearchParams();
+    if (options?.includeArchived) params.set('includeArchived', 'true');
+    if (options?.archivedOnly) params.set('archivedOnly', 'true');
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return this.request<Participant[]>(`/participants${query}`);
+  }
+
+  async archiveParticipant(participantId: string): Promise<{ message: string }> {
+    return this.request(`/participants/${participantId}/archive`, {
+      method: 'POST',
+    });
+  }
+
+  async unarchiveParticipant(participantId: string): Promise<{ message: string }> {
+    return this.request(`/participants/${participantId}/unarchive`, {
+      method: 'POST',
+    });
   }
 
   async getParticipantSessions(participantId: string): Promise<SessionListItem[]> {

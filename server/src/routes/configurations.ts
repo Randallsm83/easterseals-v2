@@ -11,10 +11,20 @@ const CreateConfigSchema = z.object({
   config: SessionConfigSchema.omit({ sessionId: true }),
 });
 
-// Get all configurations
-router.get('/', (_req, res) => {
+// Get all configurations (with optional archive filter)
+router.get('/', (req, res) => {
   try {
-    const configs = statements.getAllConfigs.all();
+    const includeArchived = req.query.includeArchived === 'true';
+    const archivedOnly = req.query.archivedOnly === 'true';
+    
+    let configs;
+    if (archivedOnly) {
+      configs = statements.getArchivedConfigs.all();
+    } else if (includeArchived) {
+      configs = statements.getAllConfigsIncludingArchived.all();
+    } else {
+      configs = statements.getAllConfigs.all();
+    }
     res.json(configs);
   } catch (error) {
     console.error('Error fetching configurations:', error);
@@ -92,6 +102,46 @@ router.put('/:configId', (req, res) => {
   } catch (error) {
     console.error('Error updating configuration:', error);
     res.status(500).json({ error: 'Failed to update configuration' });
+  }
+});
+
+// Archive configuration
+router.post('/:configId/archive', (req, res) => {
+  try {
+    const { configId } = req.params;
+    
+    const config = statements.getConfig.get(configId);
+    if (!config) {
+      res.status(404).json({ error: 'Configuration not found' });
+      return;
+    }
+
+    statements.archiveConfig.run(configId);
+    
+    res.json({ message: 'Configuration archived successfully' });
+  } catch (error) {
+    console.error('Error archiving configuration:', error);
+    res.status(500).json({ error: 'Failed to archive configuration' });
+  }
+});
+
+// Unarchive configuration
+router.post('/:configId/unarchive', (req, res) => {
+  try {
+    const { configId } = req.params;
+    
+    const config = statements.getConfig.get(configId);
+    if (!config) {
+      res.status(404).json({ error: 'Configuration not found' });
+      return;
+    }
+
+    statements.unarchiveConfig.run(configId);
+    
+    res.json({ message: 'Configuration unarchived successfully' });
+  } catch (error) {
+    console.error('Error unarchiving configuration:', error);
+    res.status(500).json({ error: 'Failed to unarchive configuration' });
   }
 });
 
