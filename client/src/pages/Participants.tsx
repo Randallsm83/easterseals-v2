@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Archive } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { api } from '../lib/api';
@@ -100,12 +101,12 @@ export function Participants() {
                     <Button className="w-full">View Analytics</Button>
                   </Link>
                   <Button 
-                    variant="ghost" 
-                    size="sm"
+                    variant="outline" 
+                    size="icon"
                     onClick={() => handleArchive(participant.participantId)}
                     title="Archive participant"
                   >
-                    Archive
+                    <Archive className="h-4 w-4" />
                   </Button>
                 </div>
               </CardContent>
