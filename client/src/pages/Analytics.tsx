@@ -18,9 +18,9 @@ import { api } from '../lib/api';
 import type { SessionDataResponse, SessionListItem, ChartDataPoint, ButtonPosition, Participant } from '../types';
 import { calculateAccuracy, calculateClickRate, formatDuration, parseSqliteDate, formatTimestamp } from '../lib/utils';
 
-// Format money - display raw value (cents) like old app
+// Format money - display in dollars with $ sign
 function formatMoney(cents: number): string {
-  return String(cents);
+  return `$${(cents / 100).toFixed(2)}`;
 }
 
 // Extract session number from composite sessionId (e.g., "100-1" -> "1")
@@ -638,30 +638,30 @@ export function Analytics() {
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={400}>
-                <ScatterChart>
+                <ScatterChart margin={{ top: 20, right: 20, bottom: 40, left: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#444" />
                   <XAxis
                     dataKey="x"
                     type="number"
                     name="Time"
                     domain={[0, 'auto']}
-                    label={{ value: 'Time (seconds)', position: 'insideBottom', offset: -5 }}
                     stroke="#888"
+                    tick={{ fill: '#888' }}
                   />
                   <YAxis
                     dataKey="y"
                     type="number"
                     name="Clicks"
                     domain={[0, 'auto']}
-                    label={{ value: 'Clicks per Button', angle: -90, position: 'insideLeft' }}
                     stroke="#888"
+                    tick={{ fill: '#888' }}
                   />
                   <Tooltip
                     cursor={{ strokeDasharray: '3 3' }}
                     contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
                     labelStyle={{ color: '#fff' }}
                   />
-                  <Legend />
+                  <Legend wrapperStyle={{ paddingTop: '20px' }} />
                   <Scatter
                     name="Left Button"
                     data={chartData.filter((d) => d.buttonClicked === 'left').map(d => ({ x: d.timeElapsed, y: d.left }))}
@@ -689,30 +689,30 @@ export function Analytics() {
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={400}>
-                <ScatterChart>
+                <ScatterChart margin={{ top: 20, right: 20, bottom: 40, left: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#444" />
                   <XAxis
                     dataKey="x"
                     type="number"
                     name="Time"
                     domain={[0, 'auto']}
-                    label={{ value: 'Time (seconds)', position: 'insideBottom', offset: -5 }}
                     stroke="#888"
+                    tick={{ fill: '#888' }}
                   />
                   <YAxis
                     dataKey="y"
                     type="number"
                     name="Total"
                     domain={[0, 'auto']}
-                    label={{ value: 'Total Clicks', angle: -90, position: 'insideLeft' }}
                     stroke="#888"
+                    tick={{ fill: '#888' }}
                   />
                   <Tooltip
                     cursor={{ strokeDasharray: '3 3' }}
                     contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
                     labelStyle={{ color: '#fff' }}
                   />
-                  <Legend />
+                  <Legend wrapperStyle={{ paddingTop: '20px' }} />
                   <Scatter
                     name="Left Button"
                     data={chartData.filter((d) => d.buttonClicked === 'left').map(d => ({ x: d.timeElapsed, y: d.total }))}
@@ -740,16 +740,17 @@ export function Analytics() {
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={chartData}>
+                <LineChart data={chartData} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#444" />
                   <XAxis
                     dataKey="timeElapsed"
-                    label={{ value: 'Time (seconds)', position: 'insideBottom', offset: -5 }}
                     stroke="#888"
+                    tick={{ fill: '#888' }}
                   />
                   <YAxis
-                    label={{ value: 'Money (cents)', angle: -90, position: 'insideLeft' }}
                     stroke="#888"
+                    tick={{ fill: '#888' }}
+                    tickFormatter={(value: number) => `$${(value / 100).toFixed(0)}`}
                   />
                   <Tooltip
                     contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}

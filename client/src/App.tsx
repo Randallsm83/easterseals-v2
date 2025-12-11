@@ -15,7 +15,7 @@ function App() {
           <div className="container mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
               <Link to="/" className="text-2xl font-bold">
-                Easterseals Research
+                Research Platform
               </Link>
               <div className="flex gap-6">
                 <Link

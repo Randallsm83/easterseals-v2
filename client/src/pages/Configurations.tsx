@@ -58,9 +58,9 @@ export function Configurations() {
             return (
               <Card key={config.configId} className="hover:shadow-lg transition-shadow">
                 <CardHeader>
-                  <CardTitle className="text-lg">Config {config.configId}</CardTitle>
+                  <CardTitle className="text-lg">{config.name || `Config ${config.configId}`}</CardTitle>
                   <CardDescription>
-                    {config.name || `Created ${formatTimestamp(config.createdAt)}`}
+                    Created {formatTimestamp(config.createdAt)}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
