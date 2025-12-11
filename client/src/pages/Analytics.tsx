@@ -638,7 +638,7 @@ export function Analytics() {
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={400}>
-                <ScatterChart margin={{ top: 20, right: 30, bottom: 50, left: 50 }}>
+                <ScatterChart margin={{ top: 40, right: 30, bottom: 50, left: 50 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#444" />
                   <XAxis
                     dataKey="x"
@@ -663,7 +663,7 @@ export function Analytics() {
                     contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
                     labelStyle={{ color: '#fff' }}
                   />
-                  <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                  <Legend verticalAlign="top" wrapperStyle={{ paddingBottom: '10px' }} />
                   <Scatter
                     name="Left Button"
                     data={chartData.filter((d) => d.buttonClicked === 'left').map(d => ({ x: d.timeElapsed, y: d.left }))}
@@ -691,7 +691,7 @@ export function Analytics() {
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={400}>
-                <ScatterChart margin={{ top: 20, right: 30, bottom: 50, left: 50 }}>
+                <ScatterChart margin={{ top: 40, right: 30, bottom: 50, left: 50 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#444" />
                   <XAxis
                     dataKey="x"
@@ -716,7 +716,7 @@ export function Analytics() {
                     contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
                     labelStyle={{ color: '#fff' }}
                   />
-                  <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                  <Legend verticalAlign="top" wrapperStyle={{ paddingBottom: '10px' }} />
                   <Scatter
                     name="Left Button"
                     data={chartData.filter((d) => d.buttonClicked === 'left').map(d => ({ x: d.timeElapsed, y: d.total }))}
