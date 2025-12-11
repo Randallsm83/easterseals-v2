@@ -637,41 +637,43 @@ export function Analytics() {
           <Card>
             <CardHeader>
               <CardTitle>Click Timeline - Individual Buttons</CardTitle>
-              <CardDescription>Cumulative clicks per button over time</CardDescription>
+              <CardDescription>
+                Cumulative clicks per button over time
+                <span className="ml-6 inline-flex gap-4">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: '#5ccc96' }} />
+                    Left
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: '#e39400' }} />
+                    Middle
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: '#00a3cc' }} />
+                    Right
+                  </span>
+                </span>
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex justify-center gap-6 mb-4 text-sm">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#5ccc96' }} />
-                  <span>Left Button</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#e39400' }} />
-                  <span>Middle Button</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#00a3cc' }} />
-                  <span>Right Button</span>
-                </div>
-              </div>
               <ResponsiveContainer width="100%" height={350}>
-                <ScatterChart margin={{ top: 10, right: 30, bottom: 50, left: 50 }}>
+                <ScatterChart margin={{ top: 10, right: 30, bottom: 50, left: 60 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#444" />
                   <XAxis
                     dataKey="x"
                     type="number"
                     name="Time"
-                    domain={[0, 'dataMax']}
+                    domain={[0, (dataMax: number) => Math.ceil(dataMax)]}
                     stroke="#888"
                     tick={{ fill: '#888' }}
-                    tickCount={6}
+                    allowDecimals={false}
                     label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
                   />
                   <YAxis
                     dataKey="y"
                     type="number"
                     name="Clicks"
-                    domain={[0, 'dataMax']}
+                    domain={[0, (dataMax: number) => Math.max(1, Math.ceil(dataMax))]}
                     stroke="#888"
                     tick={{ fill: '#888' }}
                     allowDecimals={false}
@@ -707,41 +709,43 @@ export function Analytics() {
           <Card>
             <CardHeader>
               <CardTitle>Click Timeline - Total Clicks</CardTitle>
-              <CardDescription>All clicks colored by button</CardDescription>
+              <CardDescription>
+                All clicks colored by button
+                <span className="ml-6 inline-flex gap-4">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: '#5ccc96' }} />
+                    Left
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: '#e39400' }} />
+                    Middle
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: '#00a3cc' }} />
+                    Right
+                  </span>
+                </span>
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex justify-center gap-6 mb-4 text-sm">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#5ccc96' }} />
-                  <span>Left Button</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#e39400' }} />
-                  <span>Middle Button</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#00a3cc' }} />
-                  <span>Right Button</span>
-                </div>
-              </div>
               <ResponsiveContainer width="100%" height={350}>
-                <ScatterChart margin={{ top: 10, right: 30, bottom: 50, left: 50 }}>
+                <ScatterChart margin={{ top: 10, right: 30, bottom: 50, left: 60 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#444" />
                   <XAxis
                     dataKey="x"
                     type="number"
                     name="Time"
-                    domain={[0, 'dataMax']}
+                    domain={[0, (dataMax: number) => Math.ceil(dataMax)]}
                     stroke="#888"
                     tick={{ fill: '#888' }}
-                    tickCount={6}
+                    allowDecimals={false}
                     label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
                   />
                   <YAxis
                     dataKey="y"
                     type="number"
                     name="Total"
-                    domain={[0, 'dataMax']}
+                    domain={[0, (dataMax: number) => Math.max(1, Math.ceil(dataMax))]}
                     stroke="#888"
                     tick={{ fill: '#888' }}
                     allowDecimals={false}
@@ -780,35 +784,47 @@ export function Analytics() {
               <CardDescription>Money earned over time</CardDescription>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={chartData} margin={{ top: 20, right: 30, bottom: 50, left: 60 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-                  <XAxis
-                    dataKey="timeElapsed"
-                    type="number"
-                    domain={[0, 'dataMax']}
-                    stroke="#888"
-                    tick={{ fill: '#888' }}
-                    tickCount={6}
-                    label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
-                  />
-                  <YAxis
-                    dataKey="money"
-                    domain={[0, 'dataMax']}
-                    stroke="#888"
-                    tick={{ fill: '#888' }}
-                    tickFormatter={(value: number) => `$${(value / 100).toFixed(2)}`}
-                    label={{ value: 'Money Earned', angle: -90, position: 'insideLeft', offset: -15, fill: '#888' }}
-                  />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
-                    labelStyle={{ color: '#fff' }}
-                    formatter={(value: number) => [formatMoney(value), 'Money']}
-                    labelFormatter={(value: number) => `Time: ${value.toFixed(1)}s`}
-                  />
-                  <Line type="stepAfter" dataKey="money" stroke="#b3a1e6" strokeWidth={2} dot={{ r: 3, fill: '#b3a1e6' }} />
-                </LineChart>
-              </ResponsiveContainer>
+              {(() => {
+                const maxMoney = Math.max(...chartData.map(d => d.money), 0);
+                if (maxMoney === 0) {
+                  return (
+                    <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                      No money earned in this session
+                    </div>
+                  );
+                }
+                return (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <LineChart data={chartData} margin={{ top: 20, right: 30, bottom: 50, left: 60 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#444" />
+                      <XAxis
+                        dataKey="timeElapsed"
+                        type="number"
+                        domain={[0, (dataMax: number) => Math.ceil(dataMax)]}
+                        stroke="#888"
+                        tick={{ fill: '#888' }}
+                        allowDecimals={false}
+                        label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
+                      />
+                      <YAxis
+                        dataKey="money"
+                        domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.1)]}
+                        stroke="#888"
+                        tick={{ fill: '#888' }}
+                        tickFormatter={(value: number) => `$${(value / 100).toFixed(2)}`}
+                        label={{ value: 'Money Earned', angle: -90, position: 'insideLeft', offset: -15, fill: '#888' }}
+                      />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
+                        labelStyle={{ color: '#fff' }}
+                        formatter={(value: number) => [formatMoney(value), 'Money']}
+                        labelFormatter={(value: number) => `Time: ${value.toFixed(1)}s`}
+                      />
+                      <Line type="stepAfter" dataKey="money" stroke="#b3a1e6" strokeWidth={2} dot={{ r: 3, fill: '#b3a1e6' }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                );
+              })()}
             </CardContent>
           </Card>
 
