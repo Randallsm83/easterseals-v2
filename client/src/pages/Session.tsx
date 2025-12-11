@@ -35,6 +35,7 @@ export function Session() {
   const [sessionMessage, setSessionMessage] = useState('');
   const timerIdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const sessionInitializedRef = useRef(false);
 
   // Initialize audio element
   useEffect(() => {
@@ -99,6 +100,10 @@ export function Session() {
   }, [config, sessionId, moneyCounter, timeLimitReached, moneyLimitReached, clickCounts, setMoneyLimitReached, endSession]);
 
   const loadSessionConfig = useCallback(async () => {
+    // Prevent double initialization in React StrictMode
+    if (sessionInitializedRef.current) return;
+    sessionInitializedRef.current = true;
+
     try {
       const sessionData = await api.getSessionData(sessionId!);
       const cfg = sessionData.sessionConfig;
@@ -140,10 +145,12 @@ export function Session() {
         handleTimeLimitEnd();
       }, sessionConfig.timeLimit * 1000);
     } catch (err) {
+      sessionInitializedRef.current = false; // Allow retry on error
       setError(err instanceof Error ? err.message : 'Failed to load session');
       setLoading(false);
     }
-  }, [sessionId, setConfig, startSession, handleTimeLimitEnd]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
 
   useEffect(() => {
     if (!sessionId) {
@@ -264,7 +271,7 @@ export function Session() {
   const isDisabled = !sessionActive && !(config.continueAfterMoneyLimit && moneyLimitReached);
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-12">
+    <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-20">
       {/* Money Display */}
       <div className="text-center">
         <div className="text-7xl font-bold text-primary animate-in">
@@ -273,7 +280,7 @@ export function Session() {
       </div>
 
       {/* Buttons */}
-      <div className="flex items-center justify-center gap-24">
+      <div className="flex items-center justify-center gap-24 mt-8">
         {(['left', 'middle', 'right'] as ButtonPosition[]).map((position) => (
           <button
             key={position}
@@ -298,11 +305,6 @@ export function Session() {
           {sessionMessage}
         </div>
       )}
-
-      {/* Session Info - minimal during active session */}
-      <div className="text-center text-sm text-muted-foreground space-y-1">
-        <p>Total Clicks: {clickCounts.total}</p>
-      </div>
     </div>
   );
 }
