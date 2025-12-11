@@ -164,4 +164,5 @@ export interface ChartDataPoint {
 export interface Participant {
   participantId: string;
   sessionCount: number;
+  lastSessionDate: string | null;
 }
