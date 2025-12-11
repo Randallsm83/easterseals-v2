@@ -101,12 +101,11 @@ export function Participants() {
                   </Link>
                   <Button 
                     variant="ghost" 
-                    size="icon"
+                    size="sm"
                     onClick={() => handleArchive(participant.participantId)}
                     title="Archive participant"
                   >
-                    <span className="sr-only">Archive</span>
-                    📦
+                    Archive
                   </Button>
                 </div>
               </CardContent>
