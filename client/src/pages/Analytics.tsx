@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import {
   LineChart,
   Line,
@@ -31,6 +31,8 @@ function getSessionNumber(sessionId: string): string {
 
 export function Analytics() {
   const { sessionId: urlSessionId } = useParams<{ sessionId?: string }>();
+  const [searchParams] = useSearchParams();
+  const urlParticipantId = searchParams.get('participant');
   
   // Cascading dropdown state
   const [participants, setParticipants] = useState<Participant[]>([]);
@@ -63,13 +65,25 @@ export function Analytics() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlSessionId]);
 
+  // If URL has ?participant= param, pre-select that participant
+  useEffect(() => {
+    if (urlParticipantId && !urlSessionId && participants.length > 0) {
+      const found = participants.find(p => p.participantId === urlParticipantId);
+      if (found) {
+        setSelectedParticipantId(urlParticipantId);
+        loadParticipantSessions(urlParticipantId);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlParticipantId, participants]);
+
   async function loadParticipants() {
     try {
       const data = await api.getParticipants();
       setParticipants(data);
       
-      // If no URL session specified, select first participant
-      if (!urlSessionId && data.length > 0) {
+      // If no URL session or participant specified, select first participant
+      if (!urlSessionId && !urlParticipantId && data.length > 0) {
         setSelectedParticipantId(data[0].participantId);
         await loadParticipantSessions(data[0].participantId);
       }

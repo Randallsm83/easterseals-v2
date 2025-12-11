@@ -3,6 +3,8 @@ import { statements } from '../db/index.js';
 
 interface ParticipantRow {
   participantId: string;
+  sessionCount: number;
+  lastSessionDate: string | null;
 }
 
 interface SessionRow {
@@ -24,10 +26,10 @@ interface EventRow {
 
 const router = Router();
 
-// Get all distinct participants
+// Get all distinct participants with session counts
 router.get('/', (_req, res) => {
   try {
-    const participants = statements.getDistinctParticipants.all() as ParticipantRow[];
+    const participants = statements.getParticipantsWithStats.all() as ParticipantRow[];
     res.json(participants);
   } catch (error) {
     console.error('Error fetching participants:', error);
