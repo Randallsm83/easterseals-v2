@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
 import { Home } from './pages/Home';
 import { ConfigurationSetup } from './pages/ConfigurationSetup';
+import { Configurations } from './pages/Configurations';
+import { Participants } from './pages/Participants';
 import { StartSession } from './pages/StartSession';
 import { Session } from './pages/Session';
 import { Analytics } from './pages/Analytics';
@@ -15,7 +17,7 @@ function App() {
               <Link to="/" className="text-2xl font-bold">
                 Easterseals Research
               </Link>
-              <div className="flex gap-4">
+              <div className="flex gap-6">
                 <Link
                   to="/"
                   className="text-sm font-medium hover:underline"
@@ -23,10 +25,22 @@ function App() {
                   Home
                 </Link>
                 <Link
-                  to="/config/new"
+                  to="/participants"
                   className="text-sm font-medium hover:underline"
                 >
-                  New Configuration
+                  Participants
+                </Link>
+                <Link
+                  to="/configurations"
+                  className="text-sm font-medium hover:underline"
+                >
+                  Configurations
+                </Link>
+                <Link
+                  to="/analytics"
+                  className="text-sm font-medium hover:underline"
+                >
+                  Analytics
                 </Link>
               </div>
             </div>
@@ -36,6 +50,8 @@ function App() {
         <main className="container mx-auto px-4 py-8">
           <Routes>
             <Route path="/" element={<Home />} />
+            <Route path="/participants" element={<Participants />} />
+            <Route path="/configurations" element={<Configurations />} />
             <Route path="/config/new" element={<ConfigurationSetup />} />
             <Route path="/start/:configId" element={<StartSession />} />
             <Route path="/session/:sessionId" element={<Session />} />

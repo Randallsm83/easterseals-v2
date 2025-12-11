@@ -1,103 +1,80 @@
-import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { api } from '../lib/api';
-import type { Configuration } from '../types';
-import { formatTimestamp } from '../lib/utils';
 
 export function Home() {
-  const [configurations, setConfigurations] = useState<Configuration[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadConfigurations();
-  }, []);
-
-  async function loadConfigurations() {
-    try {
-      const data = await api.getConfigurations();
-      setConfigurations(data);
-    } catch (error) {
-      console.error('Failed to load configurations:', error);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-4xl font-bold">Easterseals Research Study</h1>
-          <p className="text-muted-foreground mt-2">
-            Create configurations and run sessions
-          </p>
-        </div>
-        <Link to="/config/new">
-          <Button size="lg">Create Configuration</Button>
-        </Link>
+    <div className="space-y-8">
+      {/* Hero Section */}
+      <div className="text-center py-12">
+        <h1 className="text-5xl font-bold mb-4">Easterseals Research Study</h1>
+        <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+          Behavioral research platform for conducting button-click experiments with configurable reward schedules
+        </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {loading ? (
-          <Card>
-            <CardContent className="p-6">
-              <p className="text-muted-foreground">Loading configurations...</p>
-            </CardContent>
-          </Card>
-        ) : configurations.length === 0 ? (
-          <Card>
-            <CardContent className="p-6">
-              <p className="text-muted-foreground">No configurations yet. Create your first one!</p>
-            </CardContent>
-          </Card>
-        ) : (
-          configurations.map((config) => {
-            const parsedConfig = typeof config.config === 'string' ? JSON.parse(config.config) : config.config;
-            return (
-              <Card key={config.configId} className="hover:shadow-lg transition-shadow">
-                <CardHeader>
-                  <CardTitle className="text-lg">{config.name}</CardTitle>
-                  <CardDescription>
-                    Created {formatTimestamp(config.createdAt)}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="text-sm space-y-1">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Active Button:</span>
-                      <span className="font-medium capitalize">{parsedConfig.buttonActive}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Points per {parsedConfig.clicksNeeded} clicks:</span>
-                      <span className="font-medium">{parsedConfig.pointsAwarded}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Session Limit:</span>
-                      <span className="font-medium">
-                        {parsedConfig.sessionLength} {parsedConfig.sessionLengthType}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 mt-4">
-                    <Link to={`/start/${config.configId}`} className="flex-1">
-                      <Button className="w-full" size="sm">
-                        Start Session
-                      </Button>
-                    </Link>
-                    <Link to={`/config/${config.configId}/sessions`} className="flex-1">
-                      <Button className="w-full" variant="outline" size="sm">
-                        View Sessions
-                      </Button>
-                    </Link>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })
-        )}
+      {/* Quick Actions */}
+      <div className="grid gap-6 md:grid-cols-3">
+        <Card className="hover:shadow-lg transition-shadow">
+          <CardHeader>
+            <CardTitle className="text-2xl">Participants</CardTitle>
+            <CardDescription>
+              View all participants and their session history
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link to="/participants">
+              <Button className="w-full" size="lg">View Participants</Button>
+            </Link>
+          </CardContent>
+        </Card>
+
+        <Card className="hover:shadow-lg transition-shadow">
+          <CardHeader>
+            <CardTitle className="text-2xl">Configurations</CardTitle>
+            <CardDescription>
+              Manage experiment configurations and parameters
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link to="/configurations">
+              <Button className="w-full" size="lg" variant="secondary">View Configurations</Button>
+            </Link>
+          </CardContent>
+        </Card>
+
+        <Card className="hover:shadow-lg transition-shadow">
+          <CardHeader>
+            <CardTitle className="text-2xl">Analytics</CardTitle>
+            <CardDescription>
+              View session data and performance metrics
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link to="/analytics">
+              <Button className="w-full" size="lg" variant="outline">View Analytics</Button>
+            </Link>
+          </CardContent>
+        </Card>
       </div>
+
+      {/* Quick Start */}
+      <Card className="bg-gradient-to-r from-primary/10 to-accent/10">
+        <CardHeader>
+          <CardTitle className="text-xl">Quick Start</CardTitle>
+          <CardDescription>
+            Start a new session with an existing configuration
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex gap-4">
+          <Link to="/configurations">
+            <Button>Select Configuration & Start Session</Button>
+          </Link>
+          <Link to="/config/new">
+            <Button variant="outline">Create New Configuration</Button>
+          </Link>
+        </CardContent>
+      </Card>
     </div>
   );
 }

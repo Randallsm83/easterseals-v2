@@ -115,6 +115,16 @@ function createStatements() {
       SELECT DISTINCT participantId FROM sessions ORDER BY participantId ASC
     `),
 
+    getParticipantsWithStats: db.prepare(`
+      SELECT 
+        participantId,
+        COUNT(*) as sessionCount,
+        MAX(startedAt) as lastSessionDate
+      FROM sessions 
+      GROUP BY participantId 
+      ORDER BY participantId ASC
+    `),
+
     getMaxSessionIdForParticipant: db.prepare(`
       SELECT COUNT(*) as sessionCount 
       FROM sessions 
