@@ -160,6 +160,10 @@ export function Analytics() {
       const hasNewFormat = click.clickInfo?.left !== undefined && click.clickInfo?.total !== undefined;
       
       if (hasNewFormat) {
+        // sessionInfo may have moneyCounter (old) or pointsCounter (new/normalized)
+        const sessionMoney = (click.sessionInfo as { moneyCounter?: number; pointsCounter?: number })?.moneyCounter 
+          ?? (click.sessionInfo as { moneyCounter?: number; pointsCounter?: number })?.pointsCounter 
+          ?? 0;
         return {
           timeElapsed: Number(timeElapsed.toFixed(2)),
           timestamp: click.timestamp,
@@ -167,7 +171,7 @@ export function Analytics() {
           middle: click.clickInfo?.middle ?? 0,
           right: click.clickInfo?.right ?? 0,
           total: click.clickInfo?.total ?? 0,
-          money: click.sessionInfo?.moneyCounter ?? 0,
+          money: sessionMoney,
           buttonClicked: click.buttonClicked,
         };
       }
@@ -657,25 +661,28 @@ export function Analytics() {
                     dataKey="x"
                     type="number"
                     name="Time"
-                    domain={[0, 'auto']}
+                    domain={[0, 'dataMax']}
                     stroke="#888"
                     tick={{ fill: '#888' }}
-                    tickFormatter={(value: number) => Math.round(value).toString()}
+                    tickCount={6}
                     label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
                   />
                   <YAxis
                     dataKey="y"
                     type="number"
                     name="Clicks"
-                    domain={[0, 'auto']}
+                    domain={[0, 'dataMax']}
                     stroke="#888"
                     tick={{ fill: '#888' }}
+                    allowDecimals={false}
                     label={{ value: 'Clicks', angle: -90, position: 'insideLeft', offset: -10, fill: '#888' }}
                   />
                   <Tooltip
                     cursor={{ strokeDasharray: '3 3' }}
                     contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
                     labelStyle={{ color: '#fff' }}
+                    formatter={(value: number, name: string) => [value, name]}
+                    labelFormatter={(value: number) => `Time: ${value.toFixed(1)}s`}
                   />
                   <Scatter
                     name="Left Button"
@@ -724,25 +731,28 @@ export function Analytics() {
                     dataKey="x"
                     type="number"
                     name="Time"
-                    domain={[0, 'auto']}
+                    domain={[0, 'dataMax']}
                     stroke="#888"
                     tick={{ fill: '#888' }}
-                    tickFormatter={(value: number) => Math.round(value).toString()}
+                    tickCount={6}
                     label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
                   />
                   <YAxis
                     dataKey="y"
                     type="number"
                     name="Total"
-                    domain={[0, 'auto']}
+                    domain={[0, 'dataMax']}
                     stroke="#888"
                     tick={{ fill: '#888' }}
+                    allowDecimals={false}
                     label={{ value: 'Total Clicks', angle: -90, position: 'insideLeft', offset: -10, fill: '#888' }}
                   />
                   <Tooltip
                     cursor={{ strokeDasharray: '3 3' }}
                     contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
                     labelStyle={{ color: '#fff' }}
+                    formatter={(value: number, name: string) => [value, name]}
+                    labelFormatter={(value: number) => `Time: ${value.toFixed(1)}s`}
                   />
                   <Scatter
                     name="Left Button"
@@ -776,24 +786,25 @@ export function Analytics() {
                   <XAxis
                     dataKey="timeElapsed"
                     type="number"
-                    domain={[0, 'auto']}
+                    domain={[0, 'dataMax']}
                     stroke="#888"
                     tick={{ fill: '#888' }}
-                    tickFormatter={(value: number) => Math.round(value).toString()}
+                    tickCount={6}
                     label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
                   />
                   <YAxis
-                    domain={[0, 'auto']}
+                    dataKey="money"
+                    domain={[0, 'dataMax']}
                     stroke="#888"
                     tick={{ fill: '#888' }}
-                    tickFormatter={(value: number) => `$${(value / 100).toFixed(0)}`}
+                    tickFormatter={(value: number) => `$${(value / 100).toFixed(2)}`}
                     label={{ value: 'Money Earned', angle: -90, position: 'insideLeft', offset: -15, fill: '#888' }}
                   />
                   <Tooltip
                     contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
                     labelStyle={{ color: '#fff' }}
                     formatter={(value: number) => [formatMoney(value), 'Money']}
-                    labelFormatter={(value: number) => `Time: ${Math.round(value)}s`}
+                    labelFormatter={(value: number) => `Time: ${value.toFixed(1)}s`}
                   />
                   <Line type="stepAfter" dataKey="money" stroke="#b3a1e6" strokeWidth={2} dot={{ r: 3, fill: '#b3a1e6' }} />
                 </LineChart>
