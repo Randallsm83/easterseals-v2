@@ -5,7 +5,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { api } from '../lib/api';
-import type { BaseConfig, ButtonPosition } from '../types';
+import type { BaseConfig } from '../types';
 
 export function ConfigurationSetup() {
   const navigate = useNavigate();
@@ -100,59 +100,76 @@ export function ConfigurationSetup() {
               <CardTitle>Button Configuration</CardTitle>
               <CardDescription>Customize button appearance and active button</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="buttonActive">Active Button (awards points) *</Label>
-                <select
-                  id="buttonActive"
-                  value={formData.buttonActive}
-onChange={(e) => setFormData({ ...formData, buttonActive: e.target.value as ButtonPosition })}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
-                >
-                  <option value="left">Left</option>
-                  <option value="middle">Middle</option>
-                  <option value="right">Right</option>
-                </select>
-              </div>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">Click a button card to set it as active (awards money)</p>
 
-              <div className="grid gap-6">
-                {(['left', 'middle', 'right'] as const).map((position) => (
-                  <div key={position} className="border border-border rounded-lg p-4 space-y-3">
-                    <h4 className="font-medium capitalize">{position} Button</h4>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Shape</Label>
-                        <select
-                          value={formData[`${position}Button`].shape}
-                          onChange={(e) => updateButton(position, 'shape', e.target.value)}
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                        >
-                          <option value="circle">Circle</option>
-                          <option value="square">Square</option>
-                          <option value="rectangle">Rectangle</option>
-                        </select>
+              <div className="grid gap-4 md:grid-cols-3">
+                {(['left', 'middle', 'right'] as const).map((position) => {
+                  const isActive = formData.buttonActive === position;
+                  const buttonColor = formData[`${position}Button`].color;
+                  return (
+                    <div 
+                      key={position} 
+                      onClick={() => setFormData({ ...formData, buttonActive: position })}
+                      className={`relative rounded-lg p-4 space-y-3 cursor-pointer transition-all ${
+                        isActive 
+                          ? 'ring-2 ring-primary bg-primary/5' 
+                          : 'border border-border hover:border-primary/50'
+                      }`}
+                    >
+                      {isActive && (
+                        <div className="absolute -top-2 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-2 py-0.5 rounded-full font-medium">
+                          Active
+                        </div>
+                      )}
+                      <div className="flex items-center gap-3">
+                        <div 
+                          className="w-8 h-8 rounded"
+                          style={{ 
+                            backgroundColor: buttonColor,
+                            borderRadius: formData[`${position}Button`].shape === 'circle' ? '50%' : formData[`${position}Button`].shape === 'square' ? '4px' : '4px'
+                          }}
+                        />
+                        <h4 className="font-medium capitalize">{position}</h4>
                       </div>
-                      <div className="space-y-2">
-                        <Label>Color</Label>
-                        <div className="flex gap-2">
-                          <Input
-                            type="color"
-                            value={formData[`${position}Button`].color}
-                            onChange={(e) => updateButton(position, 'color', e.target.value)}
-                            className="w-20 h-10 cursor-pointer"
-                          />
-                          <Input
-                            type="text"
-                            value={formData[`${position}Button`].color}
-                            onChange={(e) => updateButton(position, 'color', e.target.value)}
-                            className="flex-1"
-                            pattern="^#[0-9A-Fa-f]{6}$"
-                          />
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Shape</Label>
+                          <select
+                            value={formData[`${position}Button`].shape}
+                            onChange={(e) => { e.stopPropagation(); updateButton(position, 'shape', e.target.value); }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                          >
+                            <option value="circle">Circle</option>
+                            <option value="square">Square</option>
+                            <option value="rectangle">Rectangle</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Color</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              type="color"
+                              value={buttonColor}
+                              onChange={(e) => updateButton(position, 'color', e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-12 h-9 cursor-pointer p-1"
+                            />
+                            <Input
+                              type="text"
+                              value={buttonColor}
+                              onChange={(e) => updateButton(position, 'color', e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex-1 h-9 text-xs"
+                              pattern="^#[0-9A-Fa-f]{6}$"
+                            />
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
