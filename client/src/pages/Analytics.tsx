@@ -14,7 +14,7 @@ import {
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { api } from '../lib/api';
-import type { SessionDataResponse, SessionListItem, ChartDataPoint, ButtonPosition, Participant } from '../types';
+import type { SessionDataResponse, SessionListItem, ChartDataPoint, ButtonPosition, Participant, ButtonShape } from '../types';
 import { calculateAccuracy, calculateClickRate, formatDuration, parseSqliteDate, formatTimestamp } from '../lib/utils';
 
 // Format money - display in dollars with $ sign
@@ -26,6 +26,72 @@ function formatMoney(cents: number): string {
 function getSessionNumber(sessionId: string): string {
   const parts = sessionId.split('-');
   return parts.length > 1 ? parts[parts.length - 1] : sessionId;
+}
+
+// Helper to get button color from session config (handles new and legacy formats)
+function getButtonColor(config: SessionDataResponse['sessionConfig'], position: 'left' | 'middle' | 'right'): string {
+  // Fallback colors if none found
+  const fallbackColors = { left: '#5ccc96', middle: '#e39400', right: '#00a3cc' };
+  
+  // Try new format first (leftButton.color)
+  const buttonKey = `${position}Button` as 'leftButton' | 'middleButton' | 'rightButton';
+  if (config[buttonKey]?.color) {
+    return config[buttonKey]!.color;
+  }
+  
+  // Try legacy format (leftButtonColor)
+  const legacyKey = `${position}ButtonColor` as 'leftButtonColor' | 'middleButtonColor' | 'rightButtonColor';
+  if (config[legacyKey]) {
+    return config[legacyKey]!;
+  }
+  
+  return fallbackColors[position];
+}
+
+// Helper to get button shape from session config (handles new and legacy formats)
+function getButtonShape(config: SessionDataResponse['sessionConfig'], position: 'left' | 'middle' | 'right'): ButtonShape {
+  // Try new format first (leftButton.shape)
+  const buttonKey = `${position}Button` as 'leftButton' | 'middleButton' | 'rightButton';
+  if (config[buttonKey]?.shape) {
+    return config[buttonKey]!.shape as ButtonShape;
+  }
+  
+  // Try legacy format (leftButtonShape)
+  const legacyKey = `${position}ButtonShape` as 'leftButtonShape' | 'middleButtonShape' | 'rightButtonShape';
+  if (config[legacyKey]) {
+    return config[legacyKey] as ButtonShape;
+  }
+  
+  return 'rectangle';
+}
+
+// SVG shape preview component
+function ShapePreview({ shape, color, size = 24 }: { shape: ButtonShape; color: string; size?: number }) {
+  if (shape === 'none') {
+    return <span className="text-muted-foreground text-xs">—</span>;
+  }
+  
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24">
+      {shape === 'circle' && (
+        <circle cx="12" cy="12" r="10" fill={color} />
+      )}
+      {shape === 'square' && (
+        <rect x="2" y="2" width="20" height="20" fill={color} />
+      )}
+      {shape === 'rectangle' && (
+        <rect x="1" y="5" width="22" height="14" fill={color} />
+      )}
+    </svg>
+  );
+}
+
+// Convert hex color to rgba for background
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 export function Analytics() {
@@ -525,258 +591,286 @@ export function Analytics() {
           </div>
 
           {/* Click Distribution - Visual Cards */}
-          {clickStats && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Click Distribution</CardTitle>
-                <CardDescription>Detailed breakdown by button</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* Left Button */}
-                  <div className="relative">
-                    <div 
-                      className="rounded-xl p-6 text-center transition-transform hover:scale-[1.02]" 
-                      style={{ backgroundColor: 'rgba(92, 204, 150, 0.1)', border: '2px solid #5ccc96' }}
-                    >
-                      <div className="text-6xl font-bold mb-3" style={{ color: '#5ccc96' }}>
-                        {clickStats.left.totalClicks}
+          {clickStats && (() => {
+            const leftColor = getButtonColor(sessionData.sessionConfig, 'left');
+            const middleColor = getButtonColor(sessionData.sessionConfig, 'middle');
+            const rightColor = getButtonColor(sessionData.sessionConfig, 'right');
+            const leftShape = getButtonShape(sessionData.sessionConfig, 'left');
+            const middleShape = getButtonShape(sessionData.sessionConfig, 'middle');
+            const rightShape = getButtonShape(sessionData.sessionConfig, 'right');
+            
+            return (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Click Distribution</CardTitle>
+                  <CardDescription>Detailed breakdown by button</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Left Button */}
+                    <div className="relative">
+                      <div 
+                        className="rounded-xl p-6 text-center transition-transform hover:scale-[1.02]" 
+                        style={{ backgroundColor: hexToRgba(leftColor, 0.1), border: `2px solid ${leftColor}` }}
+                      >
+                        <div className="flex justify-center mb-3">
+                          <ShapePreview shape={leftShape} color={leftColor} size={48} />
+                        </div>
+                        <div className="text-6xl font-bold mb-3" style={{ color: leftColor }}>
+                          {clickStats.left.totalClicks}
+                        </div>
+                        <div className="text-sm font-semibold mb-4" style={{ color: leftColor }}>Left Button</div>
+                        <div className="space-y-3 text-sm">
+                          <div className="flex justify-between items-center">
+                            <span className="text-muted-foreground">First Click</span>
+                            <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
+                              {clickStats.left.firstClickTime ?? '—'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-muted-foreground">Time to Click</span>
+                            <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
+                              {clickStats.left.timeToFirstClick !== null ? `${clickStats.left.timeToFirstClick}s` : '—'}
+                            </span>
+                          </div>
+                        </div>
+                        {sessionData.sessionConfig.buttonActive === 'left' && (
+                          <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-3 py-1 rounded-full font-semibold shadow-lg">
+                            ★ Active
+                          </div>
+                        )}
                       </div>
-                      <div className="text-sm font-semibold mb-4" style={{ color: '#5ccc96' }}>Left Button</div>
-                      <div className="space-y-3 text-sm">
-                        <div className="flex justify-between items-center">
-                          <span className="text-muted-foreground">First Click</span>
-                          <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
-                            {clickStats.left.firstClickTime ?? '—'}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-muted-foreground">Time to Click</span>
-                          <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
-                            {clickStats.left.timeToFirstClick !== null ? `${clickStats.left.timeToFirstClick}s` : '—'}
-                          </span>
-                        </div>
-                      </div>
-                      {sessionData.sessionConfig.buttonActive === 'left' && (
-                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-3 py-1 rounded-full font-semibold shadow-lg">
-                          ★ Active
-                        </div>
-                      )}
                     </div>
-                  </div>
 
-                  {/* Middle Button */}
-                  <div className="relative">
-                    <div 
-                      className="rounded-xl p-6 text-center transition-transform hover:scale-[1.02]" 
-                      style={{ backgroundColor: 'rgba(227, 148, 0, 0.1)', border: '2px solid #e39400' }}
-                    >
-                      <div className="text-6xl font-bold mb-3" style={{ color: '#e39400' }}>
-                        {clickStats.middle.totalClicks}
+                    {/* Middle Button */}
+                    <div className="relative">
+                      <div 
+                        className="rounded-xl p-6 text-center transition-transform hover:scale-[1.02]" 
+                        style={{ backgroundColor: hexToRgba(middleColor, 0.1), border: `2px solid ${middleColor}` }}
+                      >
+                        <div className="flex justify-center mb-3">
+                          <ShapePreview shape={middleShape} color={middleColor} size={48} />
+                        </div>
+                        <div className="text-6xl font-bold mb-3" style={{ color: middleColor }}>
+                          {clickStats.middle.totalClicks}
+                        </div>
+                        <div className="text-sm font-semibold mb-4" style={{ color: middleColor }}>Middle Button</div>
+                        <div className="space-y-3 text-sm">
+                          <div className="flex justify-between items-center">
+                            <span className="text-muted-foreground">First Click</span>
+                            <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
+                              {clickStats.middle.firstClickTime ?? '—'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-muted-foreground">Time to Click</span>
+                            <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
+                              {clickStats.middle.timeToFirstClick !== null ? `${clickStats.middle.timeToFirstClick}s` : '—'}
+                            </span>
+                          </div>
+                        </div>
+                        {sessionData.sessionConfig.buttonActive === 'middle' && (
+                          <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-3 py-1 rounded-full font-semibold shadow-lg">
+                            ★ Active
+                          </div>
+                        )}
                       </div>
-                      <div className="text-sm font-semibold mb-4" style={{ color: '#e39400' }}>Middle Button</div>
-                      <div className="space-y-3 text-sm">
-                        <div className="flex justify-between items-center">
-                          <span className="text-muted-foreground">First Click</span>
-                          <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
-                            {clickStats.middle.firstClickTime ?? '—'}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-muted-foreground">Time to Click</span>
-                          <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
-                            {clickStats.middle.timeToFirstClick !== null ? `${clickStats.middle.timeToFirstClick}s` : '—'}
-                          </span>
-                        </div>
-                      </div>
-                      {sessionData.sessionConfig.buttonActive === 'middle' && (
-                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-3 py-1 rounded-full font-semibold shadow-lg">
-                          ★ Active
-                        </div>
-                      )}
                     </div>
-                  </div>
 
-                  {/* Right Button */}
-                  <div className="relative">
-                    <div 
-                      className="rounded-xl p-6 text-center transition-transform hover:scale-[1.02]" 
-                      style={{ backgroundColor: 'rgba(0, 163, 204, 0.1)', border: '2px solid #00a3cc' }}
-                    >
-                      <div className="text-6xl font-bold mb-3" style={{ color: '#00a3cc' }}>
-                        {clickStats.right.totalClicks}
+                    {/* Right Button */}
+                    <div className="relative">
+                      <div 
+                        className="rounded-xl p-6 text-center transition-transform hover:scale-[1.02]" 
+                        style={{ backgroundColor: hexToRgba(rightColor, 0.1), border: `2px solid ${rightColor}` }}
+                      >
+                        <div className="flex justify-center mb-3">
+                          <ShapePreview shape={rightShape} color={rightColor} size={48} />
+                        </div>
+                        <div className="text-6xl font-bold mb-3" style={{ color: rightColor }}>
+                          {clickStats.right.totalClicks}
+                        </div>
+                        <div className="text-sm font-semibold mb-4" style={{ color: rightColor }}>Right Button</div>
+                        <div className="space-y-3 text-sm">
+                          <div className="flex justify-between items-center">
+                            <span className="text-muted-foreground">First Click</span>
+                            <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
+                              {clickStats.right.firstClickTime ?? '—'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-muted-foreground">Time to Click</span>
+                            <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
+                              {clickStats.right.timeToFirstClick !== null ? `${clickStats.right.timeToFirstClick}s` : '—'}
+                            </span>
+                          </div>
+                        </div>
+                        {sessionData.sessionConfig.buttonActive === 'right' && (
+                          <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-3 py-1 rounded-full font-semibold shadow-lg">
+                            ★ Active
+                          </div>
+                        )}
                       </div>
-                      <div className="text-sm font-semibold mb-4" style={{ color: '#00a3cc' }}>Right Button</div>
-                      <div className="space-y-3 text-sm">
-                        <div className="flex justify-between items-center">
-                          <span className="text-muted-foreground">First Click</span>
-                          <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
-                            {clickStats.right.firstClickTime ?? '—'}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-muted-foreground">Time to Click</span>
-                          <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
-                            {clickStats.right.timeToFirstClick !== null ? `${clickStats.right.timeToFirstClick}s` : '—'}
-                          </span>
-                        </div>
-                      </div>
-                      {sessionData.sessionConfig.buttonActive === 'right' && (
-                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-3 py-1 rounded-full font-semibold shadow-lg">
-                          ★ Active
-                        </div>
-                      )}
                     </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+                </CardContent>
+              </Card>
+            );
+          })()}
 
           {/* Charts */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Click Timeline - Individual Buttons</CardTitle>
-              <CardDescription>
-                Cumulative clicks per button over time
-                <span className="ml-6 inline-flex gap-4">
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: '#5ccc96' }} />
-                    Left
-                  </span>
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: '#e39400' }} />
-                    Middle
-                  </span>
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: '#00a3cc' }} />
-                    Right
-                  </span>
-                </span>
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={350}>
-                <ScatterChart margin={{ top: 10, right: 30, bottom: 50, left: 60 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-                  <XAxis
-                    dataKey="x"
-                    type="number"
-                    name="Time"
-                    domain={[0, (dataMax: number) => Math.ceil(dataMax)]}
-                    stroke="#888"
-                    tick={{ fill: '#888' }}
-                    allowDecimals={false}
-                    label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
-                  />
-                  <YAxis
-                    dataKey="y"
-                    type="number"
-                    name="Clicks"
-                    domain={[0, (dataMax: number) => Math.max(1, Math.ceil(dataMax))]}
-                    stroke="#888"
-                    tick={{ fill: '#888' }}
-                    allowDecimals={false}
-                    label={{ value: 'Clicks', angle: -90, position: 'insideLeft', offset: -10, fill: '#888' }}
-                  />
-                  <Tooltip
-                    cursor={{ strokeDasharray: '3 3' }}
-                    contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
-                    labelStyle={{ color: '#fff' }}
-                    formatter={(value: number, name: string) => [value, name]}
-                    labelFormatter={(value: number) => `Time: ${value.toFixed(1)}s`}
-                  />
-                  <Scatter
-                    name="Left Button"
-                    data={chartData.filter((d) => d.buttonClicked === 'left').map(d => ({ x: d.timeElapsed, y: d.left }))}
-                    fill="#5ccc96"
-                  />
-                  <Scatter
-                    name="Middle Button"
-                    data={chartData.filter((d) => d.buttonClicked === 'middle').map(d => ({ x: d.timeElapsed, y: d.middle }))}
-                    fill="#e39400"
-                  />
-                  <Scatter
-                    name="Right Button"
-                    data={chartData.filter((d) => d.buttonClicked === 'right').map(d => ({ x: d.timeElapsed, y: d.right }))}
-                    fill="#00a3cc"
-                  />
-                </ScatterChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
+          {(() => {
+            const leftColor = getButtonColor(sessionData.sessionConfig, 'left');
+            const middleColor = getButtonColor(sessionData.sessionConfig, 'middle');
+            const rightColor = getButtonColor(sessionData.sessionConfig, 'right');
+            
+            return (
+              <>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Click Timeline - Individual Buttons</CardTitle>
+                    <CardDescription>
+                      Cumulative clicks per button over time
+                      <span className="ml-6 inline-flex gap-4">
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: leftColor }} />
+                          Left
+                        </span>
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: middleColor }} />
+                          Middle
+                        </span>
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: rightColor }} />
+                          Right
+                        </span>
+                      </span>
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={350}>
+                      <ScatterChart margin={{ top: 10, right: 30, bottom: 50, left: 60 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#444" />
+                        <XAxis
+                          dataKey="x"
+                          type="number"
+                          name="Time"
+                          domain={[0, (dataMax: number) => Math.ceil(dataMax)]}
+                          stroke="#888"
+                          tick={{ fill: '#888' }}
+                          allowDecimals={false}
+                          label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
+                        />
+                        <YAxis
+                          dataKey="y"
+                          type="number"
+                          name="Clicks"
+                          domain={[0, (dataMax: number) => Math.max(1, Math.ceil(dataMax))]}
+                          stroke="#888"
+                          tick={{ fill: '#888' }}
+                          allowDecimals={false}
+                          label={{ value: 'Clicks', angle: -90, position: 'insideLeft', offset: -10, fill: '#888' }}
+                        />
+                        <Tooltip
+                          cursor={{ strokeDasharray: '3 3' }}
+                          contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
+                          labelStyle={{ color: '#fff' }}
+                          formatter={(value: number, name: string) => [value, name]}
+                          labelFormatter={(value: number) => `Time: ${value.toFixed(1)}s`}
+                        />
+                        <Scatter
+                          name="Left Button"
+                          data={chartData.filter((d) => d.buttonClicked === 'left').map(d => ({ x: d.timeElapsed, y: d.left }))}
+                          fill={leftColor}
+                        />
+                        <Scatter
+                          name="Middle Button"
+                          data={chartData.filter((d) => d.buttonClicked === 'middle').map(d => ({ x: d.timeElapsed, y: d.middle }))}
+                          fill={middleColor}
+                        />
+                        <Scatter
+                          name="Right Button"
+                          data={chartData.filter((d) => d.buttonClicked === 'right').map(d => ({ x: d.timeElapsed, y: d.right }))}
+                          fill={rightColor}
+                        />
+                      </ScatterChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Click Timeline - Total Clicks</CardTitle>
-              <CardDescription>
-                All clicks colored by button
-                <span className="ml-6 inline-flex gap-4">
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: '#5ccc96' }} />
-                    Left
-                  </span>
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: '#e39400' }} />
-                    Middle
-                  </span>
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: '#00a3cc' }} />
-                    Right
-                  </span>
-                </span>
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={350}>
-                <ScatterChart margin={{ top: 10, right: 30, bottom: 50, left: 60 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-                  <XAxis
-                    dataKey="x"
-                    type="number"
-                    name="Time"
-                    domain={[0, (dataMax: number) => Math.ceil(dataMax)]}
-                    stroke="#888"
-                    tick={{ fill: '#888' }}
-                    allowDecimals={false}
-                    label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
-                  />
-                  <YAxis
-                    dataKey="y"
-                    type="number"
-                    name="Total"
-                    domain={[0, (dataMax: number) => Math.max(1, Math.ceil(dataMax))]}
-                    stroke="#888"
-                    tick={{ fill: '#888' }}
-                    allowDecimals={false}
-                    label={{ value: 'Total Clicks', angle: -90, position: 'insideLeft', offset: -10, fill: '#888' }}
-                  />
-                  <Tooltip
-                    cursor={{ strokeDasharray: '3 3' }}
-                    contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
-                    labelStyle={{ color: '#fff' }}
-                    formatter={(value: number, name: string) => [value, name]}
-                    labelFormatter={(value: number) => `Time: ${value.toFixed(1)}s`}
-                  />
-                  <Scatter
-                    name="Left Button"
-                    data={chartData.filter((d) => d.buttonClicked === 'left').map(d => ({ x: d.timeElapsed, y: d.total }))}
-                    fill="#5ccc96"
-                  />
-                  <Scatter
-                    name="Middle Button"
-                    data={chartData.filter((d) => d.buttonClicked === 'middle').map(d => ({ x: d.timeElapsed, y: d.total }))}
-                    fill="#e39400"
-                  />
-                  <Scatter
-                    name="Right Button"
-                    data={chartData.filter((d) => d.buttonClicked === 'right').map(d => ({ x: d.timeElapsed, y: d.total }))}
-                    fill="#00a3cc"
-                  />
-                </ScatterChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Click Timeline - Total Clicks</CardTitle>
+                    <CardDescription>
+                      All clicks colored by button
+                      <span className="ml-6 inline-flex gap-4">
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: leftColor }} />
+                          Left
+                        </span>
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: middleColor }} />
+                          Middle
+                        </span>
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: rightColor }} />
+                          Right
+                        </span>
+                      </span>
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={350}>
+                      <ScatterChart margin={{ top: 10, right: 30, bottom: 50, left: 60 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#444" />
+                        <XAxis
+                          dataKey="x"
+                          type="number"
+                          name="Time"
+                          domain={[0, (dataMax: number) => Math.ceil(dataMax)]}
+                          stroke="#888"
+                          tick={{ fill: '#888' }}
+                          allowDecimals={false}
+                          label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
+                        />
+                        <YAxis
+                          dataKey="y"
+                          type="number"
+                          name="Total"
+                          domain={[0, (dataMax: number) => Math.max(1, Math.ceil(dataMax))]}
+                          stroke="#888"
+                          tick={{ fill: '#888' }}
+                          allowDecimals={false}
+                          label={{ value: 'Total Clicks', angle: -90, position: 'insideLeft', offset: -10, fill: '#888' }}
+                        />
+                        <Tooltip
+                          cursor={{ strokeDasharray: '3 3' }}
+                          contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
+                          labelStyle={{ color: '#fff' }}
+                          formatter={(value: number, name: string) => [value, name]}
+                          labelFormatter={(value: number) => `Time: ${value.toFixed(1)}s`}
+                        />
+                        <Scatter
+                          name="Left Button"
+                          data={chartData.filter((d) => d.buttonClicked === 'left').map(d => ({ x: d.timeElapsed, y: d.total }))}
+                          fill={leftColor}
+                        />
+                        <Scatter
+                          name="Middle Button"
+                          data={chartData.filter((d) => d.buttonClicked === 'middle').map(d => ({ x: d.timeElapsed, y: d.total }))}
+                          fill={middleColor}
+                        />
+                        <Scatter
+                          name="Right Button"
+                          data={chartData.filter((d) => d.buttonClicked === 'right').map(d => ({ x: d.timeElapsed, y: d.total }))}
+                          fill={rightColor}
+                        />
+                      </ScatterChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              </>
+            );
+          })()}
 
           <Card>
             <CardHeader>
