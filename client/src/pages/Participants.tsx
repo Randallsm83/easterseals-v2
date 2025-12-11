@@ -3,15 +3,10 @@ import { Link } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { api } from '../lib/api';
-
-interface ParticipantSummary {
-  participantId: string;
-  sessionCount: number;
-  lastSessionDate: string | null;
-}
+import type { Participant } from '../types';
 
 export function Participants() {
-  const [participants, setParticipants] = useState<ParticipantSummary[]>([]);
+  const [participants, setParticipants] = useState<Participant[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
