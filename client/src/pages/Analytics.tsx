@@ -638,7 +638,7 @@ export function Analytics() {
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={400}>
-                <ScatterChart margin={{ top: 20, right: 20, bottom: 40, left: 20 }}>
+                <ScatterChart margin={{ top: 20, right: 30, bottom: 50, left: 50 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#444" />
                   <XAxis
                     dataKey="x"
@@ -647,6 +647,7 @@ export function Analytics() {
                     domain={[0, 'auto']}
                     stroke="#888"
                     tick={{ fill: '#888' }}
+                    label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
                   />
                   <YAxis
                     dataKey="y"
@@ -655,6 +656,7 @@ export function Analytics() {
                     domain={[0, 'auto']}
                     stroke="#888"
                     tick={{ fill: '#888' }}
+                    label={{ value: 'Clicks', angle: -90, position: 'insideLeft', offset: -10, fill: '#888' }}
                   />
                   <Tooltip
                     cursor={{ strokeDasharray: '3 3' }}
@@ -689,7 +691,7 @@ export function Analytics() {
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={400}>
-                <ScatterChart margin={{ top: 20, right: 20, bottom: 40, left: 20 }}>
+                <ScatterChart margin={{ top: 20, right: 30, bottom: 50, left: 50 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#444" />
                   <XAxis
                     dataKey="x"
@@ -698,6 +700,7 @@ export function Analytics() {
                     domain={[0, 'auto']}
                     stroke="#888"
                     tick={{ fill: '#888' }}
+                    label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
                   />
                   <YAxis
                     dataKey="y"
@@ -706,6 +709,7 @@ export function Analytics() {
                     domain={[0, 'auto']}
                     stroke="#888"
                     tick={{ fill: '#888' }}
+                    label={{ value: 'Total Clicks', angle: -90, position: 'insideLeft', offset: -10, fill: '#888' }}
                   />
                   <Tooltip
                     cursor={{ strokeDasharray: '3 3' }}
@@ -740,17 +744,19 @@ export function Analytics() {
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={chartData} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                <LineChart data={chartData} margin={{ top: 20, right: 30, bottom: 50, left: 60 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#444" />
                   <XAxis
                     dataKey="timeElapsed"
                     stroke="#888"
                     tick={{ fill: '#888' }}
+                    label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
                   />
                   <YAxis
                     stroke="#888"
                     tick={{ fill: '#888' }}
                     tickFormatter={(value: number) => `$${(value / 100).toFixed(0)}`}
+                    label={{ value: 'Money Earned', angle: -90, position: 'insideLeft', offset: -15, fill: '#888' }}
                   />
                   <Tooltip
                     contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}

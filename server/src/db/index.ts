@@ -24,7 +24,8 @@ export function initializeDatabase() {
       configId TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       config TEXT NOT NULL,
-      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      isArchived INTEGER DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS sessions (
@@ -56,13 +57,33 @@ export function initializeDatabase() {
     
     CREATE INDEX IF NOT EXISTS idx_session_event_log_timestamp 
       ON session_event_log(timestamp);
+
+    CREATE TABLE IF NOT EXISTS archived_participants (
+      participantId TEXT PRIMARY KEY,
+      archivedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   console.log('\u2713 Database tables created');
 
+  // Run migrations for existing databases
+  runMigrations();
+
   // Initialize prepared statements after tables exist
   statements = createStatements();
   console.log('\u2713 Prepared statements ready');
+}
+
+// Run any necessary migrations
+function runMigrations() {
+  // Check if isArchived column exists in configurations table
+  const tableInfo = db.prepare("PRAGMA table_info(configurations)").all() as { name: string }[];
+  const hasIsArchived = tableInfo.some(col => col.name === 'isArchived');
+  
+  if (!hasIsArchived) {
+    db.exec(`ALTER TABLE configurations ADD COLUMN isArchived INTEGER DEFAULT 0`);
+    console.log('\u2713 Added isArchived column to configurations');
+  }
 }
 
 function createStatements() {
@@ -73,7 +94,15 @@ function createStatements() {
     `),
 
     getAllConfigs: db.prepare(`
-      SELECT * FROM configurations ORDER BY createdAt DESC
+      SELECT * FROM configurations WHERE isArchived = 0 ORDER BY createdAt DESC
+    `),
+
+    getAllConfigsIncludingArchived: db.prepare(`
+      SELECT * FROM configurations ORDER BY isArchived ASC, createdAt DESC
+    `),
+
+    getArchivedConfigs: db.prepare(`
+      SELECT * FROM configurations WHERE isArchived = 1 ORDER BY createdAt DESC
     `),
 
     insertConfig: db.prepare(`
@@ -82,6 +111,14 @@ function createStatements() {
 
     updateConfig: db.prepare(`
       UPDATE configurations SET name = ?, config = ? WHERE configId = ?
+    `),
+
+    archiveConfig: db.prepare(`
+      UPDATE configurations SET isArchived = 1 WHERE configId = ?
+    `),
+
+    unarchiveConfig: db.prepare(`
+      UPDATE configurations SET isArchived = 0 WHERE configId = ?
     `),
 
     deleteConfig: db.prepare(`
@@ -117,12 +154,39 @@ function createStatements() {
 
     getParticipantsWithStats: db.prepare(`
       SELECT 
-        participantId,
+        s.participantId,
         COUNT(*) as sessionCount,
-        MAX(startedAt) as lastSessionDate
-      FROM sessions 
-      GROUP BY participantId 
-      ORDER BY participantId ASC
+        MAX(s.startedAt) as lastSessionDate,
+        CASE WHEN ap.participantId IS NOT NULL THEN 1 ELSE 0 END as isArchived
+      FROM sessions s
+      LEFT JOIN archived_participants ap ON s.participantId = ap.participantId
+      WHERE ap.participantId IS NULL
+      GROUP BY s.participantId 
+      ORDER BY s.participantId ASC
+    `),
+
+    getArchivedParticipantsWithStats: db.prepare(`
+      SELECT 
+        s.participantId,
+        COUNT(*) as sessionCount,
+        MAX(s.startedAt) as lastSessionDate,
+        1 as isArchived
+      FROM sessions s
+      INNER JOIN archived_participants ap ON s.participantId = ap.participantId
+      GROUP BY s.participantId 
+      ORDER BY s.participantId ASC
+    `),
+
+    archiveParticipant: db.prepare(`
+      INSERT OR REPLACE INTO archived_participants (participantId) VALUES (?)
+    `),
+
+    unarchiveParticipant: db.prepare(`
+      DELETE FROM archived_participants WHERE participantId = ?
+    `),
+
+    isParticipantArchived: db.prepare(`
+      SELECT 1 FROM archived_participants WHERE participantId = ?
     `),
 
     getMaxSessionIdForParticipant: db.prepare(`

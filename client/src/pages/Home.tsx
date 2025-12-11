@@ -54,7 +54,7 @@ export function Home() {
             <Button>Select Configuration</Button>
           </Link>
           <Link to="/config/new">
-            <Button variant="outline">Create New Configuration</Button>
+            <Button variant="outline" className="select-none">Create New Configuration</Button>
           </Link>
         </CardContent>
       </Card>

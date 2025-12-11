@@ -32,6 +32,7 @@ export interface Configuration {
   name: string;
   config: string; // JSON string of BaseConfig
   createdAt: string;
+  isArchived?: number; // 0 or 1
 }
 
 export interface SessionConfig {
@@ -165,4 +166,5 @@ export interface Participant {
   participantId: string;
   sessionCount: number;
   lastSessionDate: string | null;
+  isArchived?: number; // 0 or 1
 }
