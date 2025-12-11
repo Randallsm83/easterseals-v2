@@ -9,7 +9,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
 } from 'recharts';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
@@ -637,8 +636,22 @@ export function Analytics() {
               <CardDescription>Cumulative clicks per button over time</CardDescription>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={400}>
-                <ScatterChart margin={{ top: 40, right: 30, bottom: 50, left: 50 }}>
+              <div className="flex justify-center gap-6 mb-4 text-sm">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#5ccc96' }} />
+                  <span>Left Button</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#e39400' }} />
+                  <span>Middle Button</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#00a3cc' }} />
+                  <span>Right Button</span>
+                </div>
+              </div>
+              <ResponsiveContainer width="100%" height={350}>
+                <ScatterChart margin={{ top: 10, right: 30, bottom: 50, left: 50 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#444" />
                   <XAxis
                     dataKey="x"
@@ -663,7 +676,6 @@ export function Analytics() {
                     contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
                     labelStyle={{ color: '#fff' }}
                   />
-                  <Legend verticalAlign="top" wrapperStyle={{ paddingBottom: '10px' }} />
                   <Scatter
                     name="Left Button"
                     data={chartData.filter((d) => d.buttonClicked === 'left').map(d => ({ x: d.timeElapsed, y: d.left }))}
@@ -690,8 +702,22 @@ export function Analytics() {
               <CardDescription>All clicks colored by button</CardDescription>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={400}>
-                <ScatterChart margin={{ top: 40, right: 30, bottom: 50, left: 50 }}>
+              <div className="flex justify-center gap-6 mb-4 text-sm">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#5ccc96' }} />
+                  <span>Left Button</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#e39400' }} />
+                  <span>Middle Button</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#00a3cc' }} />
+                  <span>Right Button</span>
+                </div>
+              </div>
+              <ResponsiveContainer width="100%" height={350}>
+                <ScatterChart margin={{ top: 10, right: 30, bottom: 50, left: 50 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#444" />
                   <XAxis
                     dataKey="x"
@@ -716,7 +742,6 @@ export function Analytics() {
                     contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
                     labelStyle={{ color: '#fff' }}
                   />
-                  <Legend verticalAlign="top" wrapperStyle={{ paddingBottom: '10px' }} />
                   <Scatter
                     name="Left Button"
                     data={chartData.filter((d) => d.buttonClicked === 'left').map(d => ({ x: d.timeElapsed, y: d.total }))}

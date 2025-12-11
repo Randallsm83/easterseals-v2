@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Archive } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { api } from '../lib/api';
@@ -123,12 +124,12 @@ export function Configurations() {
                       </Button>
                     </Link>
                     <Button 
-                      variant="ghost" 
-                      size="sm"
+                      variant="outline" 
+                      size="icon"
                       onClick={() => handleArchive(config.configId)}
                       title="Archive configuration"
                     >
-                      Archive
+                      <Archive className="h-4 w-4" />
                     </Button>
                   </div>
                 </CardContent>
