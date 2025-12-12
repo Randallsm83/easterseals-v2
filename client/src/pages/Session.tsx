@@ -36,6 +36,10 @@ export function Session() {
   const timerIdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const sessionInitializedRef = useRef(false);
+  
+  // Refs for latest state values (needed for setTimeout callback)
+  const stateRef = useRef({ moneyCounter, clickCounts, moneyLimitReached, timeLimitReached });
+  stateRef.current = { moneyCounter, clickCounts, moneyLimitReached, timeLimitReached };
 
   // Initialize audio element
   useEffect(() => {
@@ -54,9 +58,11 @@ export function Session() {
     }
   }, [config?.playAwardSound]);
 
-  // Handle time limit reached
+  // Handle time limit reached - uses refs to get latest state in setTimeout
   const handleTimeLimitEnd = useCallback(async () => {
-    if (timeLimitReached || !config) return;
+    const { moneyCounter: currentMoney, clickCounts: currentClicks, moneyLimitReached: currentMoneyLimit, timeLimitReached: currentTimeLimit } = stateRef.current;
+    
+    if (currentTimeLimit) return;
 
     setTimeLimitReached(true);
     endSession();
@@ -67,13 +73,13 @@ export function Session() {
       sessionId: sessionId!,
       event: 'end',
       value: {
-        moneyCounter,
-        moneyLimitReached,
+        moneyCounter: currentMoney,
+        moneyLimitReached: currentMoneyLimit,
         timeLimitReached: true,
-        clicks: clickCounts,
+        clicks: currentClicks,
       },
     });
-  }, [config, sessionId, moneyCounter, moneyLimitReached, timeLimitReached, clickCounts, setTimeLimitReached, endSession]);
+  }, [sessionId, setTimeLimitReached, endSession]);
 
   // Handle money limit reached
   const handleMoneyLimitEnd = useCallback(async () => {
