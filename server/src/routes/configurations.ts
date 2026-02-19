@@ -8,7 +8,7 @@ const router = Router();
 const CreateConfigSchema = z.object({
   configId: z.string().min(1).max(100),
   name: z.string().min(1).max(200),
-  config: SessionConfigSchema.omit({ sessionId: true }),
+  config: SessionConfigSchema,
 });
 
 // Get all configurations (with optional archive filter)

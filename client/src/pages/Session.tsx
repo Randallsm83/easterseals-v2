@@ -68,17 +68,20 @@ export function Session() {
     endSession();
     setSessionMessage('Time limit reached. Session ended.');
 
-    // Log session end
-    await api.logEvent({
-      sessionId: sessionId!,
-      event: 'end',
-      value: {
-        moneyCounter: currentMoney,
-        moneyLimitReached: currentMoneyLimit,
-        timeLimitReached: true,
-        clicks: currentClicks,
-      },
-    });
+    // Log session end event and mark session as ended
+    await Promise.all([
+      api.logEvent({
+        sessionId: sessionId!,
+        event: 'end',
+        value: {
+          moneyCounter: currentMoney,
+          moneyLimitReached: currentMoneyLimit,
+          timeLimitReached: true,
+          clicks: currentClicks,
+        },
+      }),
+      api.endSession(sessionId!),
+    ]);
   }, [sessionId, setTimeLimitReached, endSession]);
 
   // Handle money limit reached
@@ -91,17 +94,20 @@ export function Session() {
       endSession();
       setSessionMessage('Money limit reached. Session ended.');
 
-      // Log session end
-      await api.logEvent({
-        sessionId: sessionId!,
-        event: 'end',
-        value: {
-          moneyCounter,
-          moneyLimitReached: true,
-          timeLimitReached,
-          clicks: clickCounts,
-        },
-      });
+      // Log session end event and mark session as ended
+      await Promise.all([
+        api.logEvent({
+          sessionId: sessionId!,
+          event: 'end',
+          value: {
+            moneyCounter,
+            moneyLimitReached: true,
+            timeLimitReached,
+            clicks: clickCounts,
+          },
+        }),
+        api.endSession(sessionId!),
+      ]);
     }
   }, [config, sessionId, moneyCounter, timeLimitReached, moneyLimitReached, clickCounts, setMoneyLimitReached, endSession]);
 
@@ -287,22 +293,26 @@ export function Session() {
 
       {/* Buttons */}
       <div className="flex items-center justify-center gap-24 mt-8">
-        {(['left', 'middle', 'right'] as ButtonPosition[]).map((position) => (
-          <button
-            key={position}
-            onClick={() => handleButtonClick(position)}
-            disabled={isDisabled}
-            style={getButtonStyle(position)}
-            className={cn(
-              'text-white font-semibold shadow-lg transition-all',
-              'hover:scale-110 active:scale-95',
-              'disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100',
-              'focus:outline-none focus:ring-4 focus:ring-primary/50'
-            )}
-          >
-            Click Me
-          </button>
-        ))}
+        {(['left', 'middle', 'right'] as ButtonPosition[]).map((position) => {
+          const buttonConfig = config[`${position}Button`];
+          if (!buttonConfig || buttonConfig.shape === 'none') return null;
+          return (
+            <button
+              key={position}
+              onClick={() => handleButtonClick(position)}
+              disabled={isDisabled}
+              style={getButtonStyle(position)}
+              className={cn(
+                'text-white font-semibold shadow-lg transition-all',
+                'hover:scale-110 active:scale-95',
+                'disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100',
+                'focus:outline-none focus:ring-4 focus:ring-primary/50'
+              )}
+            >
+              Click Me
+            </button>
+          );
+        })}
       </div>
 
       {/* Session Message */}
