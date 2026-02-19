@@ -94,15 +94,29 @@ function createStatements() {
     `),
 
     getAllConfigs: db.prepare(`
-      SELECT * FROM configurations WHERE isArchived = 0 ORDER BY createdAt DESC
+      SELECT c.*, COUNT(s.sessionId) as sessionCount
+      FROM configurations c
+      LEFT JOIN sessions s ON c.configId = s.configId
+      WHERE c.isArchived = 0
+      GROUP BY c.configId
+      ORDER BY c.createdAt DESC
     `),
 
     getAllConfigsIncludingArchived: db.prepare(`
-      SELECT * FROM configurations ORDER BY isArchived ASC, createdAt DESC
+      SELECT c.*, COUNT(s.sessionId) as sessionCount
+      FROM configurations c
+      LEFT JOIN sessions s ON c.configId = s.configId
+      GROUP BY c.configId
+      ORDER BY c.isArchived ASC, c.createdAt DESC
     `),
 
     getArchivedConfigs: db.prepare(`
-      SELECT * FROM configurations WHERE isArchived = 1 ORDER BY createdAt DESC
+      SELECT c.*, COUNT(s.sessionId) as sessionCount
+      FROM configurations c
+      LEFT JOIN sessions s ON c.configId = s.configId
+      WHERE c.isArchived = 1
+      GROUP BY c.configId
+      ORDER BY c.createdAt DESC
     `),
 
     insertConfig: db.prepare(`

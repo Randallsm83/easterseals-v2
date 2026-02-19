@@ -1,16 +1,49 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Archive } from 'lucide-react';
+import { Archive, ChevronDown, ChevronUp } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { api } from '../lib/api';
-import type { Configuration } from '../types';
+import type { Configuration, SessionListItem } from '../types';
 import { formatTimestamp } from '../lib/utils';
+
+function ConfigSessionsList({ configId }: { configId: string }) {
+  const [sessions, setSessions] = useState<SessionListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.getConfigurationSessions(configId)
+      .then(setSessions)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [configId]);
+
+  if (loading) return <p className="text-xs text-muted-foreground py-2">Loading sessions...</p>;
+  if (sessions.length === 0) return <p className="text-xs text-muted-foreground py-2">No sessions found</p>;
+
+  return (
+    <div className="space-y-1 max-h-48 overflow-y-auto">
+      {sessions.map((s) => (
+        <Link
+          key={s.sessionId}
+          to={`/analytics/${s.sessionId}`}
+          className="flex items-center justify-between text-xs px-2 py-1.5 rounded hover:bg-muted/50 transition-colors group"
+        >
+          <span className="font-mono text-muted-foreground group-hover:text-foreground">{s.sessionId}</span>
+          <span className="text-muted-foreground">
+            {s.startedAt ? formatTimestamp(s.startedAt) : '—'}
+          </span>
+        </Link>
+      ))}
+    </div>
+  );
+}
 
 export function Configurations() {
   const [configurations, setConfigurations] = useState<Configuration[]>([]);
   const [archivedConfigurations, setArchivedConfigurations] = useState<Configuration[]>([]);
   const [showArchived, setShowArchived] = useState(false);
+  const [expandedConfigs, setExpandedConfigs] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -48,6 +81,15 @@ export function Configurations() {
     } catch (error) {
       console.error('Failed to unarchive configuration:', error);
     }
+  }
+
+  function toggleExpanded(configId: string) {
+    setExpandedConfigs((prev) => {
+      const next = new Set(prev);
+      if (next.has(configId)) next.delete(configId);
+      else next.add(configId);
+      return next;
+    });
   }
 
   return (
@@ -90,6 +132,8 @@ export function Configurations() {
         ) : (
           configurations.map((config) => {
             const parsedConfig = typeof config.config === 'string' ? JSON.parse(config.config) : config.config;
+            const isExpanded = expandedConfigs.has(config.configId);
+            const count = config.sessionCount ?? 0;
             return (
               <Card key={config.configId} className="hover:shadow-lg transition-shadow">
                 <CardHeader>
@@ -117,6 +161,27 @@ export function Configurations() {
                       <span className="font-medium">{parsedConfig.awardInterval} clicks</span>
                     </div>
                   </div>
+
+                  {/* Sessions toggle */}
+                  {count > 0 && (
+                    <button
+                      onClick={() => toggleExpanded(config.configId)}
+                      className="flex items-center gap-1 text-sm text-primary hover:underline w-full"
+                    >
+                      {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                      {count} session{count !== 1 ? 's' : ''}
+                    </button>
+                  )}
+                  {count === 0 && (
+                    <span className="text-xs text-muted-foreground">No sessions</span>
+                  )}
+
+                  {isExpanded && (
+                    <div className="border-t pt-2">
+                      <ConfigSessionsList configId={config.configId} />
+                    </div>
+                  )}
+
                   <div className="flex gap-2 mt-4">
                     <Link to={`/start/${config.configId}`} className="flex-1">
                       <Button className="w-full" size="sm">
@@ -147,6 +212,8 @@ export function Configurations() {
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {archivedConfigurations.map((config) => {
                 const parsedConfig = typeof config.config === 'string' ? JSON.parse(config.config) : config.config;
+                const count = config.sessionCount ?? 0;
+                const isExpanded = expandedConfigs.has(config.configId);
                 return (
                   <Card key={config.configId} className="opacity-60 hover:opacity-100 transition-opacity">
                     <CardHeader>
@@ -169,6 +236,20 @@ export function Configurations() {
                           <span className="font-medium">{parsedConfig.timeLimit}s</span>
                         </div>
                       </div>
+                      {count > 0 && (
+                        <button
+                          onClick={() => toggleExpanded(config.configId)}
+                          className="flex items-center gap-1 text-sm text-primary hover:underline w-full"
+                        >
+                          {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                          {count} session{count !== 1 ? 's' : ''}
+                        </button>
+                      )}
+                      {isExpanded && (
+                        <div className="border-t pt-2">
+                          <ConfigSessionsList configId={config.configId} />
+                        </div>
+                      )}
                       <div className="flex gap-2 mt-4">
                         <Button 
                           variant="outline" 

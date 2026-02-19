@@ -33,6 +33,7 @@ export interface Configuration {
   config: string; // JSON string of BaseConfig
   createdAt: string;
   isArchived?: number; // 0 or 1
+  sessionCount?: number;
 }
 
 export interface SessionConfig {
