@@ -622,6 +622,9 @@ export function Analytics() {
                       const stat = clickStats[position];
                       const isActive = sessionData.sessionConfig.buttonActive === position;
 
+                      // Skip buttons that were hidden during the session
+                      if (shape === 'none') return null;
+
                       return (
                         <div key={position} className="relative">
                           <div
