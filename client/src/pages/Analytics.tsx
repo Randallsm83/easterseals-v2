@@ -720,6 +720,11 @@ export function Analytics() {
           {/* Charts - use fixed high-contrast palette for readability */}
           {(() => {
             const CHART_COLORS = { left: '#5ccc96', middle: '#e39400', right: '#00a3cc' };
+            const DOT_SIZE = 5;
+            // Custom dot renderer to guarantee color shows on dark backgrounds
+            const colorDot = (color: string) => (props: { cx?: number; cy?: number }) => (
+              <circle cx={props.cx} cy={props.cy} r={DOT_SIZE} fill={color} stroke={color} strokeWidth={1} />
+            );
             
             return (
               <>
@@ -779,16 +784,19 @@ export function Analytics() {
                           name="Left Button"
                           data={chartData.filter((d) => d.buttonClicked === 'left').map(d => ({ x: d.timeElapsed, y: d.left }))}
                           fill={CHART_COLORS.left}
+                          shape={colorDot(CHART_COLORS.left)}
                         />
                         <Scatter
                           name="Middle Button"
                           data={chartData.filter((d) => d.buttonClicked === 'middle').map(d => ({ x: d.timeElapsed, y: d.middle }))}
                           fill={CHART_COLORS.middle}
+                          shape={colorDot(CHART_COLORS.middle)}
                         />
                         <Scatter
                           name="Right Button"
                           data={chartData.filter((d) => d.buttonClicked === 'right').map(d => ({ x: d.timeElapsed, y: d.right }))}
                           fill={CHART_COLORS.right}
+                          shape={colorDot(CHART_COLORS.right)}
                         />
                       </ScatterChart>
                     </ResponsiveContainer>
@@ -851,16 +859,19 @@ export function Analytics() {
                           name="Left Button"
                           data={chartData.filter((d) => d.buttonClicked === 'left').map(d => ({ x: d.timeElapsed, y: d.total }))}
                           fill={CHART_COLORS.left}
+                          shape={colorDot(CHART_COLORS.left)}
                         />
                         <Scatter
                           name="Middle Button"
                           data={chartData.filter((d) => d.buttonClicked === 'middle').map(d => ({ x: d.timeElapsed, y: d.total }))}
                           fill={CHART_COLORS.middle}
+                          shape={colorDot(CHART_COLORS.middle)}
                         />
                         <Scatter
                           name="Right Button"
                           data={chartData.filter((d) => d.buttonClicked === 'right').map(d => ({ x: d.timeElapsed, y: d.total }))}
                           fill={CHART_COLORS.right}
+                          shape={colorDot(CHART_COLORS.right)}
                         />
                       </ScatterChart>
                     </ResponsiveContainer>
