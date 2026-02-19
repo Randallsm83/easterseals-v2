@@ -717,11 +717,9 @@ export function Analytics() {
             );
           })()}
 
-          {/* Charts */}
+          {/* Charts - use fixed high-contrast palette for readability */}
           {(() => {
-            const leftColor = getButtonColor(sessionData.sessionConfig, 'left');
-            const middleColor = getButtonColor(sessionData.sessionConfig, 'middle');
-            const rightColor = getButtonColor(sessionData.sessionConfig, 'right');
+            const CHART_COLORS = { left: '#5ccc96', middle: '#e39400', right: '#00a3cc' };
             
             return (
               <>
@@ -732,15 +730,15 @@ export function Analytics() {
                       Cumulative clicks per button over time
                       <span className="ml-6 inline-flex gap-4">
                         <span className="inline-flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: leftColor }} />
+                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: CHART_COLORS.left }} />
                           Left
                         </span>
                         <span className="inline-flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: middleColor }} />
+                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: CHART_COLORS.middle }} />
                           Middle
                         </span>
                         <span className="inline-flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: rightColor }} />
+                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: CHART_COLORS.right }} />
                           Right
                         </span>
                       </span>
@@ -780,17 +778,17 @@ export function Analytics() {
                         <Scatter
                           name="Left Button"
                           data={chartData.filter((d) => d.buttonClicked === 'left').map(d => ({ x: d.timeElapsed, y: d.left }))}
-                          fill={leftColor}
+                          fill={CHART_COLORS.left}
                         />
                         <Scatter
                           name="Middle Button"
                           data={chartData.filter((d) => d.buttonClicked === 'middle').map(d => ({ x: d.timeElapsed, y: d.middle }))}
-                          fill={middleColor}
+                          fill={CHART_COLORS.middle}
                         />
                         <Scatter
                           name="Right Button"
                           data={chartData.filter((d) => d.buttonClicked === 'right').map(d => ({ x: d.timeElapsed, y: d.right }))}
-                          fill={rightColor}
+                          fill={CHART_COLORS.right}
                         />
                       </ScatterChart>
                     </ResponsiveContainer>
@@ -804,15 +802,15 @@ export function Analytics() {
                       All clicks colored by button
                       <span className="ml-6 inline-flex gap-4">
                         <span className="inline-flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: leftColor }} />
+                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: CHART_COLORS.left }} />
                           Left
                         </span>
                         <span className="inline-flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: middleColor }} />
+                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: CHART_COLORS.middle }} />
                           Middle
                         </span>
                         <span className="inline-flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: rightColor }} />
+                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: CHART_COLORS.right }} />
                           Right
                         </span>
                       </span>
@@ -852,17 +850,17 @@ export function Analytics() {
                         <Scatter
                           name="Left Button"
                           data={chartData.filter((d) => d.buttonClicked === 'left').map(d => ({ x: d.timeElapsed, y: d.total }))}
-                          fill={leftColor}
+                          fill={CHART_COLORS.left}
                         />
                         <Scatter
                           name="Middle Button"
                           data={chartData.filter((d) => d.buttonClicked === 'middle').map(d => ({ x: d.timeElapsed, y: d.total }))}
-                          fill={middleColor}
+                          fill={CHART_COLORS.middle}
                         />
                         <Scatter
                           name="Right Button"
                           data={chartData.filter((d) => d.buttonClicked === 'right').map(d => ({ x: d.timeElapsed, y: d.total }))}
-                          fill={rightColor}
+                          fill={CHART_COLORS.right}
                         />
                       </ScatterChart>
                     </ResponsiveContainer>
@@ -879,14 +877,21 @@ export function Analytics() {
             </CardHeader>
             <CardContent>
               {(() => {
-                const maxMoney = Math.max(...chartData.map(d => d.money), 0);
-                if (maxMoney === 0) {
+                const moneyValues = chartData.map(d => d.money);
+                const minMoney = Math.min(...moneyValues);
+                const maxMoney = Math.max(...moneyValues, 0);
+                if (maxMoney === 0 && minMoney === 0) {
                   return (
                     <div className="h-[300px] flex items-center justify-center text-muted-foreground">
                       No money earned in this session
                     </div>
                   );
                 }
+                // Smart Y-axis: pad 10% around data range, snap to nice cent values
+                const range = maxMoney - minMoney;
+                const padding = range > 0 ? Math.ceil(range * 0.1) : Math.max(Math.ceil(maxMoney * 0.1), 50);
+                const yMin = Math.max(0, minMoney - padding);
+                const yMax = maxMoney + padding;
                 return (
                   <ResponsiveContainer width="100%" height={300}>
                     <LineChart data={chartData} margin={{ top: 20, right: 30, bottom: 50, left: 60 }}>
@@ -902,7 +907,7 @@ export function Analytics() {
                       />
                       <YAxis
                         dataKey="money"
-                        domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.1)]}
+                        domain={[yMin, yMax]}
                         stroke="#888"
                         tick={{ fill: '#888' }}
                         tickFormatter={(value: number) => `$${(value / 100).toFixed(2)}`}
