@@ -590,16 +590,19 @@ export function Analytics() {
             </Card>
           </div>
 
-          {/* Click Distribution - Visual Cards */}
-          {clickStats && (() => {
-            const leftColor = getButtonColor(sessionData.sessionConfig, 'left');
-            const middleColor = getButtonColor(sessionData.sessionConfig, 'middle');
-            const rightColor = getButtonColor(sessionData.sessionConfig, 'right');
-            const leftShape = getButtonShape(sessionData.sessionConfig, 'left');
-            const middleShape = getButtonShape(sessionData.sessionConfig, 'middle');
-            const rightShape = getButtonShape(sessionData.sessionConfig, 'right');
+          {/* Shared high-contrast palette for analytics readability */}
+          {(() => {
+            const CHART_COLORS = { left: '#5ccc96', middle: '#e39400', right: '#00a3cc' };
+            const DOT_SIZE = 5;
+            const colorDot = (color: string) => (props: { cx?: number; cy?: number }) => (
+              <circle cx={props.cx} cy={props.cy} r={DOT_SIZE} fill={color} stroke={color} strokeWidth={1} />
+            );
+            const positions = ['left', 'middle', 'right'] as const;
             
             return (
+              <>
+          {/* Click Distribution - Visual Cards */}
+          {clickStats && (
               <Card>
                 <CardHeader>
                   <CardTitle>Click Distribution</CardTitle>
@@ -607,127 +610,55 @@ export function Analytics() {
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {/* Left Button */}
-                    <div className="relative">
-                      <div 
-                        className="rounded-xl p-6 text-center transition-transform hover:scale-[1.02]" 
-                        style={{ backgroundColor: hexToRgba(leftColor, 0.1), border: `2px solid ${leftColor}` }}
-                      >
-                        <div className="flex justify-center mb-3">
-                          <ShapePreview shape={leftShape} color={leftColor} size={48} />
-                        </div>
-                        <div className="text-6xl font-bold mb-3" style={{ color: leftColor }}>
-                          {clickStats.left.totalClicks}
-                        </div>
-                        <div className="text-sm font-semibold mb-4" style={{ color: leftColor }}>Left Button</div>
-                        <div className="space-y-3 text-sm">
-                          <div className="flex justify-between items-center">
-                            <span className="text-muted-foreground">First Click</span>
-                            <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
-                              {clickStats.left.firstClickTime ?? '—'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <span className="text-muted-foreground">Time to Click</span>
-                            <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
-                              {clickStats.left.timeToFirstClick !== null ? `${clickStats.left.timeToFirstClick}s` : '—'}
-                            </span>
-                          </div>
-                        </div>
-                        {sessionData.sessionConfig.buttonActive === 'left' && (
-                          <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-3 py-1 rounded-full font-semibold shadow-lg">
-                            ★ Active
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                    {positions.map((position) => {
+                      const chartColor = CHART_COLORS[position];
+                      const configColor = getButtonColor(sessionData.sessionConfig, position);
+                      const shape = getButtonShape(sessionData.sessionConfig, position);
+                      const stat = clickStats[position];
+                      const isActive = sessionData.sessionConfig.buttonActive === position;
 
-                    {/* Middle Button */}
-                    <div className="relative">
-                      <div 
-                        className="rounded-xl p-6 text-center transition-transform hover:scale-[1.02]" 
-                        style={{ backgroundColor: hexToRgba(middleColor, 0.1), border: `2px solid ${middleColor}` }}
-                      >
-                        <div className="flex justify-center mb-3">
-                          <ShapePreview shape={middleShape} color={middleColor} size={48} />
-                        </div>
-                        <div className="text-6xl font-bold mb-3" style={{ color: middleColor }}>
-                          {clickStats.middle.totalClicks}
-                        </div>
-                        <div className="text-sm font-semibold mb-4" style={{ color: middleColor }}>Middle Button</div>
-                        <div className="space-y-3 text-sm">
-                          <div className="flex justify-between items-center">
-                            <span className="text-muted-foreground">First Click</span>
-                            <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
-                              {clickStats.middle.firstClickTime ?? '—'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <span className="text-muted-foreground">Time to Click</span>
-                            <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
-                              {clickStats.middle.timeToFirstClick !== null ? `${clickStats.middle.timeToFirstClick}s` : '—'}
-                            </span>
-                          </div>
-                        </div>
-                        {sessionData.sessionConfig.buttonActive === 'middle' && (
-                          <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-3 py-1 rounded-full font-semibold shadow-lg">
-                            ★ Active
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Right Button */}
-                    <div className="relative">
-                      <div 
-                        className="rounded-xl p-6 text-center transition-transform hover:scale-[1.02]" 
-                        style={{ backgroundColor: hexToRgba(rightColor, 0.1), border: `2px solid ${rightColor}` }}
-                      >
-                        <div className="flex justify-center mb-3">
-                          <ShapePreview shape={rightShape} color={rightColor} size={48} />
-                        </div>
-                        <div className="text-6xl font-bold mb-3" style={{ color: rightColor }}>
-                          {clickStats.right.totalClicks}
-                        </div>
-                        <div className="text-sm font-semibold mb-4" style={{ color: rightColor }}>Right Button</div>
-                        <div className="space-y-3 text-sm">
-                          <div className="flex justify-between items-center">
-                            <span className="text-muted-foreground">First Click</span>
-                            <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
-                              {clickStats.right.firstClickTime ?? '—'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <span className="text-muted-foreground">Time to Click</span>
-                            <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
-                              {clickStats.right.timeToFirstClick !== null ? `${clickStats.right.timeToFirstClick}s` : '—'}
-                            </span>
+                      return (
+                        <div key={position} className="relative">
+                          <div
+                            className="rounded-xl p-6 text-center transition-transform hover:scale-[1.02]"
+                            style={{ backgroundColor: hexToRgba(chartColor, 0.08), border: `2px solid ${chartColor}` }}
+                          >
+                            <div className="flex justify-center items-center gap-2 mb-3">
+                              <ShapePreview shape={shape} color={configColor} size={32} />
+                              <span className="text-xs text-muted-foreground font-mono">{configColor}</span>
+                            </div>
+                            <div className="text-6xl font-bold mb-3" style={{ color: chartColor }}>
+                              {stat.totalClicks}
+                            </div>
+                            <div className="text-sm font-semibold mb-4 capitalize" style={{ color: chartColor }}>{position} Button</div>
+                            <div className="space-y-3 text-sm">
+                              <div className="flex justify-between items-center">
+                                <span className="text-muted-foreground">First Click</span>
+                                <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
+                                  {stat.firstClickTime ?? '—'}
+                                </span>
+                              </div>
+                              <div className="flex justify-between items-center">
+                                <span className="text-muted-foreground">Time to Click</span>
+                                <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
+                                  {stat.timeToFirstClick !== null ? `${stat.timeToFirstClick}s` : '—'}
+                                </span>
+                              </div>
+                            </div>
+                            {isActive && (
+                              <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-3 py-1 rounded-full font-semibold shadow-lg">
+                                ★ Active
+                              </div>
+                            )}
                           </div>
                         </div>
-                        {sessionData.sessionConfig.buttonActive === 'right' && (
-                          <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-3 py-1 rounded-full font-semibold shadow-lg">
-                            ★ Active
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                      );
+                    })}
                   </div>
                 </CardContent>
               </Card>
-            );
-          })()}
+          )}
 
-          {/* Charts - use fixed high-contrast palette for readability */}
-          {(() => {
-            const CHART_COLORS = { left: '#5ccc96', middle: '#e39400', right: '#00a3cc' };
-            const DOT_SIZE = 5;
-            // Custom dot renderer to guarantee color shows on dark backgrounds
-            const colorDot = (color: string) => (props: { cx?: number; cy?: number }) => (
-              <circle cx={props.cx} cy={props.cy} r={DOT_SIZE} fill={color} stroke={color} strokeWidth={1} />
-            );
-            
-            return (
-              <>
                 <Card>
                   <CardHeader>
                     <CardTitle>Click Timeline - Individual Buttons</CardTitle>
