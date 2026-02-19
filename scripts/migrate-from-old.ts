@@ -112,15 +112,17 @@ for (const oldConfig of oldConfigs) {
     const name = configData.name || `Config ${oldConfig.configId}`;
     
     // Transform config to new format - use parseFloat for decimal cents
+    // Note: old app stored numbers as strings, and checkboxes as 'on'/undefined
+    const rawButtonActive = configData.buttonActive;
     const newConfig = {
       timeLimit: parseFloat(configData.timeLimit) || 60,
       moneyAwarded: parseFloat(configData.moneyAwarded) || 0,
       moneyLimit: parseFloat(configData.moneyLimit) || 100,
       startingMoney: parseFloat(configData.startingMoney) || 0,
       awardInterval: parseFloat(configData.awardInterval) || 10,
-      playAwardSound: configData.playAwardSound === 'on',
-      continueAfterMoneyLimit: configData.continueAfterMoneyLimit === 'on',
-      buttonActive: configData.buttonActive || 'left',
+      playAwardSound: configData.playAwardSound === 'on' || configData.playAwardSound === true,
+      continueAfterMoneyLimit: configData.continueAfterMoneyLimit === 'on' || configData.continueAfterMoneyLimit === true,
+      buttonActive: (rawButtonActive && rawButtonActive !== 'none') ? rawButtonActive : null,
       leftButton: {
         shape: configData.leftButtonShape || 'rectangle',
         color: configData.leftButtonColor || '#36454f'

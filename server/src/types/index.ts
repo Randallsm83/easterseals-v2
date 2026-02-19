@@ -1,28 +1,27 @@
 import { z } from 'zod';
 
 // Button configuration schemas
-export const ButtonShapeSchema = z.enum(['rectangle', 'square', 'circle']);
+export const ButtonShapeSchema = z.enum(['none', 'rectangle', 'square', 'circle']);
 export const ButtonPositionSchema = z.enum(['left', 'middle', 'right']);
-export const SessionLengthTypeSchema = z.enum(['seconds', 'points']);
 
 export const ButtonConfigSchema = z.object({
   shape: ButtonShapeSchema,
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
 });
 
-// Session configuration schema
+// Session configuration schema (money-based reward system)
 export const SessionConfigSchema = z.object({
-  sessionId: z.string().min(1).max(100),
-  sessionLength: z.number().int().positive(),
-  sessionLengthType: SessionLengthTypeSchema,
-  continueAfterLimit: z.boolean(),
-  buttonActive: ButtonPositionSchema,
+  timeLimit: z.number().int().positive(),
+  moneyAwarded: z.number().int().nonnegative(), // cents
+  moneyLimit: z.number().int().nonnegative(), // cents
+  startingMoney: z.number().int().nonnegative(), // cents
+  awardInterval: z.number().int().positive(), // clicks needed
+  playAwardSound: z.boolean(),
+  continueAfterMoneyLimit: z.boolean(),
+  buttonActive: ButtonPositionSchema.nullable(),
   leftButton: ButtonConfigSchema,
   middleButton: ButtonConfigSchema,
   rightButton: ButtonConfigSchema,
-  pointsAwarded: z.number().int().nonnegative(),
-  clicksNeeded: z.number().int().positive(),
-  startingPoints: z.number().int().nonnegative(),
 });
 
 // Click event schema
@@ -35,11 +34,12 @@ export const ClickEventSchema = z.object({
     left: z.number().int().nonnegative(),
     middle: z.number().int().nonnegative(),
     right: z.number().int().nonnegative(),
-    awardedPoints: z.number().int().nonnegative(),
+    awardedCents: z.number().int().nonnegative(),
   }),
   sessionInfo: z.object({
-    pointsCounter: z.number().int().nonnegative(),
-    limitReached: z.boolean(),
+    moneyCounter: z.number().int().nonnegative(),
+    moneyLimitReached: z.boolean(),
+    timeLimitReached: z.boolean(),
   }),
 });
 
@@ -48,8 +48,9 @@ export const SessionStartEventSchema = z.object({
   sessionId: z.string(),
   timestamp: z.string().datetime(),
   value: z.object({
-    pointsCounter: z.number().int().nonnegative(),
-    limitReached: z.boolean(),
+    moneyCounter: z.number().int().nonnegative(),
+    moneyLimitReached: z.boolean(),
+    timeLimitReached: z.boolean(),
   }),
 });
 
@@ -57,16 +58,21 @@ export const SessionEndEventSchema = z.object({
   sessionId: z.string(),
   timestamp: z.string().datetime(),
   value: z.object({
-    pointsCounter: z.number().int().nonnegative(),
-    pointsEarnedFinal: z.number().int().nonnegative(),
-    limitReached: z.boolean(),
+    moneyCounter: z.number().int().nonnegative(),
+    moneyLimitReached: z.boolean(),
+    timeLimitReached: z.boolean(),
+    clicks: z.object({
+      total: z.number().int().nonnegative(),
+      left: z.number().int().nonnegative(),
+      middle: z.number().int().nonnegative(),
+      right: z.number().int().nonnegative(),
+    }),
   }),
 });
 
 // TypeScript types derived from schemas
 export type ButtonShape = z.infer<typeof ButtonShapeSchema>;
 export type ButtonPosition = z.infer<typeof ButtonPositionSchema>;
-export type SessionLengthType = z.infer<typeof SessionLengthTypeSchema>;
 export type ButtonConfig = z.infer<typeof ButtonConfigSchema>;
 export type SessionConfig = z.infer<typeof SessionConfigSchema>;
 export type ClickEvent = z.infer<typeof ClickEventSchema>;
@@ -98,10 +104,14 @@ export interface SessionDataResponse {
 
 export interface SessionListResponse {
   sessionId: string;
-  createdAt: string;
+  participantId: string;
+  configId: string;
+  configName: string;
+  startedAt: string;
+  endedAt: string | null;
   totalClicks: number;
   duration: number | null;
-  finalPoints: number | null;
+  finalMoney: number | null;
 }
 
 // Analytics types
@@ -113,6 +123,6 @@ export interface SessionStats {
   accuracy: number;
   clicksPerSecond: number;
   averageTimeBetweenClicks: number;
-  pointsEarned: number;
+  moneyEarned: number;
   sessionDuration: number;
 }
