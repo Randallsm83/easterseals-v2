@@ -68,7 +68,12 @@ function getButtonShape(config: SessionDataResponse['sessionConfig'], position: 
 // SVG shape preview component
 function ShapePreview({ shape, color, size = 24 }: { shape: ButtonShape; color: string; size?: number }) {
   if (shape === 'none') {
-    return <span className="text-muted-foreground text-xs">—</span>;
+    // Hidden during session — show color swatch with dashed border
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24">
+        <rect x="2" y="2" width="20" height="20" rx="2" fill={color} opacity={0.5} stroke={color} strokeWidth={1} strokeDasharray="3 2" />
+      </svg>
+    );
   }
   
   return (
@@ -616,6 +621,9 @@ export function Analytics() {
                       const shape = getButtonShape(sessionData.sessionConfig, position);
                       const stat = clickStats[position];
                       const isActive = sessionData.sessionConfig.buttonActive === position;
+
+                      // Skip buttons that were hidden during the session
+                      if (shape === 'none') return null;
 
                       return (
                         <div key={position} className="relative">
