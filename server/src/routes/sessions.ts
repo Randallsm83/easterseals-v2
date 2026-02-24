@@ -24,13 +24,14 @@ interface EventRow {
 function normalizeClickValue(value: Record<string, unknown>) {
   // Old format: { clicks: { total, left, middle, right }, buttonClicked, pointsCounter, ... }
   // New format: { clicks: { total, left, middle, right }, buttonClicked, moneyCounter, awardedCents, ... }
+  // External input format: also includes inputId, inputName, inputSource, externalInputClicks
   
   const clicks = (value.clicks as Record<string, number>) || value;
   const moneyCounter = (value.moneyCounter ?? value.pointsCounter ?? 0) as number;
   const moneyLimitReached = (value.moneyLimitReached ?? value.limitReached ?? false) as boolean;
   const timeLimitReached = (value.timeLimitReached ?? false) as boolean;
   
-  return {
+  const result: Record<string, unknown> = {
     buttonClicked: value.buttonClicked as string,
     clickInfo: {
       total: (clicks.total ?? 0) as number,
@@ -45,6 +46,14 @@ function normalizeClickValue(value: Record<string, unknown>) {
       timeLimitReached,
     },
   };
+
+  // Pass through external input fields if present
+  if (value.inputId) result.inputId = value.inputId;
+  if (value.inputName) result.inputName = value.inputName;
+  if (value.inputSource) result.inputSource = value.inputSource;
+  if (value.externalInputClicks) result.externalInputClicks = value.externalInputClicks;
+
+  return result;
 }
 
 // Helper to normalize end event data

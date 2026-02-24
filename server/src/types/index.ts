@@ -3,25 +3,68 @@ import { z } from 'zod';
 // Button configuration schemas
 export const ButtonShapeSchema = z.enum(['none', 'rectangle', 'square', 'circle']);
 export const ButtonPositionSchema = z.enum(['left', 'middle', 'right']);
+export const ExternalInputTypeSchema = z.enum(['keyboard', 'gamepad_button', 'gamepad_axis']);
+export const InputTypeSchema = z.enum(['screen', 'keyboard', 'gamepad_button', 'gamepad_axis']);
 
 export const ButtonConfigSchema = z.object({
   shape: ButtonShapeSchema,
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
 });
 
-// Session configuration schema (money-based reward system)
+// Legacy external input schema (old format)
+export const ExternalInputConfigSchema = z.object({
+  id: z.string(),
+  name: z.string().min(1),
+  inputType: ExternalInputTypeSchema,
+  inputCode: z.string(),
+  inputLabel: z.string(),
+  isActive: z.boolean(),
+  moneyAwarded: z.number().int().nonnegative(),
+  awardInterval: z.number().int().positive(),
+  playAwardSound: z.boolean(),
+});
+
+// Unified input config schema (new format)
+export const InputConfigSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: InputTypeSchema,
+  // Screen-only
+  shape: ButtonShapeSchema.optional(),
+  color: z.string().optional(),
+  // Physical-only
+  inputCode: z.string().optional(),
+  inputLabel: z.string().optional(),
+  // Reward settings
+  isRewarded: z.boolean(),
+  moneyAwarded: z.number().int().nonnegative(),
+  awardInterval: z.number().int().positive(),
+  playAwardSound: z.boolean(),
+});
+
+// New session config schema (unified input model)
 export const SessionConfigSchema = z.object({
   timeLimit: z.number().int().positive(),
-  moneyAwarded: z.number().int().nonnegative(), // cents
-  moneyLimit: z.number().int().nonnegative(), // cents
-  startingMoney: z.number().int().nonnegative(), // cents
-  awardInterval: z.number().int().positive(), // clicks needed
+  moneyLimit: z.number().int().nonnegative(),
+  startingMoney: z.number().int().nonnegative(),
+  continueAfterMoneyLimit: z.boolean(),
+  inputs: z.array(InputConfigSchema),
+});
+
+// Legacy session config schema (old format — still accepted on read)
+export const LegacySessionConfigSchema = z.object({
+  timeLimit: z.number().int().positive(),
+  moneyAwarded: z.number().int().nonnegative(),
+  moneyLimit: z.number().int().nonnegative(),
+  startingMoney: z.number().int().nonnegative(),
+  awardInterval: z.number().int().positive(),
   playAwardSound: z.boolean(),
   continueAfterMoneyLimit: z.boolean(),
   buttonActive: ButtonPositionSchema.nullable(),
   leftButton: ButtonConfigSchema,
   middleButton: ButtonConfigSchema,
   rightButton: ButtonConfigSchema,
+  externalInputs: z.array(ExternalInputConfigSchema).optional(),
 });
 
 // Click event schema
@@ -73,8 +116,13 @@ export const SessionEndEventSchema = z.object({
 // TypeScript types derived from schemas
 export type ButtonShape = z.infer<typeof ButtonShapeSchema>;
 export type ButtonPosition = z.infer<typeof ButtonPositionSchema>;
+export type ExternalInputType = z.infer<typeof ExternalInputTypeSchema>;
+export type InputType = z.infer<typeof InputTypeSchema>;
 export type ButtonConfig = z.infer<typeof ButtonConfigSchema>;
+export type ExternalInputConfig = z.infer<typeof ExternalInputConfigSchema>;
+export type InputConfig = z.infer<typeof InputConfigSchema>;
 export type SessionConfig = z.infer<typeof SessionConfigSchema>;
+export type LegacySessionConfig = z.infer<typeof LegacySessionConfigSchema>;
 export type ClickEvent = z.infer<typeof ClickEventSchema>;
 export type SessionStartEvent = z.infer<typeof SessionStartEventSchema>;
 export type SessionEndEvent = z.infer<typeof SessionEndEventSchema>;

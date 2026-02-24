@@ -2,7 +2,9 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSessionStore } from '../stores/useSessionStore';
 import { api } from '../lib/api';
-import type { ButtonPosition } from '../types';
+import { normalizeSessionConfig } from '../lib/normalizeConfig';
+import { useExternalInput } from '../lib/useExternalInput';
+import type { InputConfig } from '../types';
 import { cn } from '../lib/utils';
 
 // Format cents as dollars
@@ -17,11 +19,14 @@ export function Session() {
     config,
     setConfig,
     moneyCounter,
-    clickCounts,
+    totalClicks,
+    inputClickCounts,
     moneyLimitReached,
     timeLimitReached,
     sessionActive,
     incrementClick,
+    incrementInterval,
+    resetInterval,
     awardMoney,
     setMoneyLimitReached,
     setTimeLimitReached,
@@ -31,15 +36,17 @@ export function Session() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [awardIntervalCounter, setAwardIntervalCounter] = useState(0);
   const [sessionMessage, setSessionMessage] = useState('');
   const timerIdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const sessionInitializedRef = useRef(false);
-  
+
+  const [lastActivatedInput, setLastActivatedInput] = useState<string | null>(null);
+  const lastActivatedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Refs for latest state values (needed for setTimeout callback)
-  const stateRef = useRef({ moneyCounter, clickCounts, moneyLimitReached, timeLimitReached });
-  stateRef.current = { moneyCounter, clickCounts, moneyLimitReached, timeLimitReached };
+  const stateRef = useRef({ moneyCounter, totalClicks, inputClickCounts, moneyLimitReached, timeLimitReached });
+  stateRef.current = { moneyCounter, totalClicks, inputClickCounts, moneyLimitReached, timeLimitReached };
 
   // Initialize audio element
   useEffect(() => {
@@ -50,25 +57,22 @@ export function Session() {
   }, []);
 
   const playAwardSound = useCallback(() => {
-    if (config?.playAwardSound && audioRef.current) {
+    if (audioRef.current) {
       audioRef.current.currentTime = 0;
-      audioRef.current.play().catch(() => {
-        // Ignore audio play errors (e.g., user hasn't interacted with page yet)
-      });
+      audioRef.current.play().catch(() => {});
     }
-  }, [config?.playAwardSound]);
+  }, []);
 
-  // Handle time limit reached - uses refs to get latest state in setTimeout
+  // Handle time limit reached
   const handleTimeLimitEnd = useCallback(async () => {
-    const { moneyCounter: currentMoney, clickCounts: currentClicks, moneyLimitReached: currentMoneyLimit, timeLimitReached: currentTimeLimit } = stateRef.current;
-    
-    if (currentTimeLimit) return;
+    const { moneyCounter: currentMoney, inputClickCounts: currentClicks, moneyLimitReached: currentMoneyLimit } = stateRef.current;
+
+    if (stateRef.current.timeLimitReached) return;
 
     setTimeLimitReached(true);
     endSession();
     setSessionMessage('Time limit reached. Session ended.');
 
-    // Log session end event and mark session as ended
     await Promise.all([
       api.logEvent({
         sessionId: sessionId!,
@@ -78,6 +82,7 @@ export function Session() {
           moneyLimitReached: currentMoneyLimit,
           timeLimitReached: true,
           clicks: currentClicks,
+          totalClicks: stateRef.current.totalClicks,
         },
       }),
       api.endSession(sessionId!),
@@ -89,12 +94,11 @@ export function Session() {
     if (moneyLimitReached || !config) return;
 
     setMoneyLimitReached(true);
-    
+
     if (!config.continueAfterMoneyLimit) {
       endSession();
       setSessionMessage('Money limit reached. Session ended.');
 
-      // Log session end event and mark session as ended
       await Promise.all([
         api.logEvent({
           sessionId: sessionId!,
@@ -103,43 +107,27 @@ export function Session() {
             moneyCounter,
             moneyLimitReached: true,
             timeLimitReached,
-            clicks: clickCounts,
+            clicks: inputClickCounts,
+            totalClicks,
           },
         }),
         api.endSession(sessionId!),
       ]);
     }
-  }, [config, sessionId, moneyCounter, timeLimitReached, moneyLimitReached, clickCounts, setMoneyLimitReached, endSession]);
+  }, [config, sessionId, moneyCounter, timeLimitReached, moneyLimitReached, inputClickCounts, totalClicks, setMoneyLimitReached, endSession]);
 
   const loadSessionConfig = useCallback(async () => {
-    // Prevent double initialization in React StrictMode
     if (sessionInitializedRef.current) return;
     sessionInitializedRef.current = true;
 
     try {
       const sessionData = await api.getSessionData(sessionId!);
-      const cfg = sessionData.sessionConfig;
-      
-      const sessionConfig = { 
-        ...cfg, 
-        sessionId: sessionId!,
-        configId: cfg.configId ?? '',
-        timeLimit: cfg.timeLimit ?? 60,
-        moneyAwarded: cfg.moneyAwarded ?? 5,
-        moneyLimit: cfg.moneyLimit ?? 1000000,
-        startingMoney: cfg.startingMoney ?? 0,
-        awardInterval: cfg.awardInterval ?? 10,
-        playAwardSound: cfg.playAwardSound ?? true,
-        continueAfterMoneyLimit: cfg.continueAfterMoneyLimit ?? true,
-        leftButton: cfg.leftButton ?? { shape: 'circle', color: '#5ccc96' },
-        middleButton: cfg.middleButton ?? { shape: 'square', color: '#e39400' },
-        rightButton: cfg.rightButton ?? { shape: 'circle', color: '#00a3cc' },
-      };
-      
+      const raw = sessionData.sessionConfig;
+      const sessionConfig = normalizeSessionConfig(raw, sessionId!, raw.configId ?? '');
+
       setConfig(sessionConfig);
       setLoading(false);
 
-      // Log session start
       await api.logEvent({
         sessionId: sessionId!,
         event: 'start',
@@ -152,12 +140,11 @@ export function Session() {
 
       startSession();
 
-      // Setup time limit timer
       timerIdRef.current = setTimeout(() => {
         handleTimeLimitEnd();
       }, sessionConfig.timeLimit * 1000);
     } catch (err) {
-      sessionInitializedRef.current = false; // Allow retry on error
+      sessionInitializedRef.current = false;
       setError(err instanceof Error ? err.message : 'Failed to load session');
       setLoading(false);
     }
@@ -169,84 +156,94 @@ export function Session() {
       navigate('/');
       return;
     }
-
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional: load config on mount triggers state updates
     loadSessionConfig();
-
     return () => {
-      if (timerIdRef.current) {
-        clearTimeout(timerIdRef.current);
-      }
+      if (timerIdRef.current) clearTimeout(timerIdRef.current);
     };
   }, [sessionId, navigate, loadSessionConfig]);
 
-  const handleButtonClick = async (button: ButtonPosition) => {
+  // Unified click handler — works for both screen buttons and physical inputs
+  const handleInputActivation = useCallback(async (inputId: string) => {
     if (!config) return;
-    // Allow clicks if session active OR if continue after money limit is enabled
     if (!sessionActive && !(config.continueAfterMoneyLimit && moneyLimitReached)) return;
 
-    incrementClick(button);
-    const newClickCounts = {
-      ...clickCounts,
-      total: clickCounts.total + 1,
-      [button]: clickCounts[button] + 1,
-    };
+    const inputConfig = config.inputs.find(i => i.id === inputId);
+    if (!inputConfig) return;
+
+    incrementClick(inputId);
+
+    // Visual flash
+    setLastActivatedInput(inputId);
+    if (lastActivatedTimerRef.current) clearTimeout(lastActivatedTimerRef.current);
+    lastActivatedTimerRef.current = setTimeout(() => setLastActivatedInput(null), 200);
 
     let awardedCents = 0;
-    let newInterval = awardIntervalCounter;
 
-    // Check if this was the active button
-    if (button === config.buttonActive) {
-      newInterval++;
+    if (inputConfig.isRewarded && !moneyLimitReached) {
+      const newInterval = incrementInterval(inputId);
 
-      if (newInterval >= config.awardInterval) {
-        newInterval = 0;
+      if (newInterval >= inputConfig.awardInterval) {
+        resetInterval(inputId);
 
-        if (!moneyLimitReached) {
-          const potentialNewTotal = moneyCounter + config.moneyAwarded;
-          
-          if (potentialNewTotal >= config.moneyLimit) {
-            // Award only what's needed to reach the limit
-            awardedCents = config.moneyLimit - moneyCounter;
-            awardMoney(awardedCents);
-            playAwardSound();
-            await handleMoneyLimitEnd();
-          } else {
-            awardedCents = config.moneyAwarded;
-            awardMoney(config.moneyAwarded);
-            playAwardSound();
-          }
+        const potentialNewTotal = moneyCounter + inputConfig.moneyAwarded;
+
+        if (potentialNewTotal >= config.moneyLimit) {
+          awardedCents = config.moneyLimit - moneyCounter;
+          awardMoney(awardedCents);
+          if (inputConfig.playAwardSound) playAwardSound();
+          await handleMoneyLimitEnd();
+        } else {
+          awardedCents = inputConfig.moneyAwarded;
+          awardMoney(inputConfig.moneyAwarded);
+          if (inputConfig.playAwardSound) playAwardSound();
         }
       }
     }
 
-    setAwardIntervalCounter(newInterval);
+    // Log the event
+    const updatedClicks = {
+      ...stateRef.current.inputClickCounts,
+      [inputId]: (stateRef.current.inputClickCounts[inputId] ?? 0) + 1,
+    };
 
-    // Log the click
     await api.logEvent({
       sessionId: sessionId!,
       event: 'click',
       value: {
-        buttonClicked: button,
-        clicks: newClickCounts,
+        inputId,
+        inputName: inputConfig.name,
+        inputType: inputConfig.type,
+        clicks: updatedClicks,
+        totalClicks: stateRef.current.totalClicks + 1,
         awardedCents,
         moneyCounter: moneyCounter + awardedCents,
         moneyLimitReached,
         timeLimitReached,
       },
     });
-  };
+  }, [config, sessionId, sessionActive, moneyCounter, moneyLimitReached, timeLimitReached,
+    incrementClick, incrementInterval, resetInterval, awardMoney, playAwardSound, handleMoneyLimitEnd]);
 
-  const getButtonStyle = (position: ButtonPosition) => {
-    if (!config) return {};
-    const buttonConfig = config[`${position}Button`];
-    if (!buttonConfig) return {};
-    
+  // External input handler — wraps handleInputActivation for physical inputs
+  const handleExternalInput = useCallback(async (inputId: string) => {
+    await handleInputActivation(inputId);
+  }, [handleInputActivation]);
+
+  // Physical inputs for the external input hook
+  const physicalInputs = config?.inputs.filter(i => i.type !== 'screen') ?? [];
+
+  useExternalInput({
+    inputs: physicalInputs,
+    onInput: handleExternalInput,
+    enabled: sessionActive || (config?.continueAfterMoneyLimit === true && moneyLimitReached),
+  });
+
+  const getButtonStyle = (input: InputConfig) => {
     const baseStyle: React.CSSProperties = {
-      backgroundColor: buttonConfig.color,
+      backgroundColor: input.color ?? '#5ccc96',
     };
 
-    switch (buttonConfig.shape) {
+    switch (input.shape) {
       case 'circle':
         return { ...baseStyle, width: '120px', height: '120px', borderRadius: '50%' };
       case 'square':
@@ -281,6 +278,7 @@ export function Session() {
   }
 
   const isDisabled = !sessionActive && !(config.continueAfterMoneyLimit && moneyLimitReached);
+  const screenInputs = config.inputs.filter(i => i.type === 'screen' && i.shape !== 'none');
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-20">
@@ -291,29 +289,48 @@ export function Session() {
         </div>
       </div>
 
-      {/* Buttons */}
+      {/* Screen Buttons */}
       <div className="flex items-center justify-center gap-24 mt-8">
-        {(['left', 'middle', 'right'] as ButtonPosition[]).map((position) => {
-          const buttonConfig = config[`${position}Button`];
-          if (!buttonConfig || buttonConfig.shape === 'none') return null;
-          return (
-            <button
-              key={position}
-              onClick={() => handleButtonClick(position)}
-              disabled={isDisabled}
-              style={getButtonStyle(position)}
+        {screenInputs.map((input) => (
+          <button
+            key={input.id}
+            onClick={() => handleInputActivation(input.id)}
+            disabled={isDisabled}
+            style={getButtonStyle(input)}
+            className={cn(
+              'text-white font-semibold shadow-lg transition-all',
+              'hover:scale-110 active:scale-95',
+              'disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100',
+              'focus:outline-none focus:ring-4 focus:ring-primary/50',
+              lastActivatedInput === input.id && 'scale-110'
+            )}
+          >
+            Click Me
+          </button>
+        ))}
+      </div>
+
+      {/* Physical Input Status */}
+      {physicalInputs.length > 0 && (
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          {physicalInputs.map((input) => (
+            <div
+              key={input.id}
               className={cn(
-                'text-white font-semibold shadow-lg transition-all',
-                'hover:scale-110 active:scale-95',
-                'disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100',
-                'focus:outline-none focus:ring-4 focus:ring-primary/50'
+                'px-4 py-2 rounded-lg border text-sm transition-all',
+                lastActivatedInput === input.id
+                  ? 'bg-primary/20 border-primary scale-105'
+                  : 'bg-muted/30 border-border'
               )}
             >
-              Click Me
-            </button>
-          );
-        })}
-      </div>
+              <span className="font-medium">{input.name || input.inputLabel}</span>
+              <span className="text-muted-foreground ml-2">
+                {inputClickCounts[input.id] ?? 0}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Session Message */}
       {sessionMessage && (

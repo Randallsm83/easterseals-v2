@@ -4,19 +4,18 @@ import type { SessionConfig } from '../types';
 interface SessionState {
   config: SessionConfig | null;
   moneyCounter: number; // in cents
-  clickCounts: {
-    total: number;
-    left: number;
-    middle: number;
-    right: number;
-  };
+  totalClicks: number;
+  inputClickCounts: Record<string, number>;
+  inputIntervalCounters: Record<string, number>;
   moneyLimitReached: boolean;
   timeLimitReached: boolean;
   sessionActive: boolean;
   
   // Actions
   setConfig: (config: SessionConfig) => void;
-  incrementClick: (button: 'left' | 'middle' | 'right') => void;
+  incrementClick: (inputId: string) => void;
+  incrementInterval: (inputId: string) => number;
+  resetInterval: (inputId: string) => void;
   awardMoney: (cents: number) => void;
   setMoneyLimitReached: (reached: boolean) => void;
   setTimeLimitReached: (reached: boolean) => void;
@@ -25,31 +24,58 @@ interface SessionState {
   resetSession: () => void;
 }
 
-export const useSessionStore = create<SessionState>((set) => ({
+export const useSessionStore = create<SessionState>((set, get) => ({
   config: null,
   moneyCounter: 0,
-  clickCounts: {
-    total: 0,
-    left: 0,
-    middle: 0,
-    right: 0,
-  },
+  totalClicks: 0,
+  inputClickCounts: {},
+  inputIntervalCounters: {},
   moneyLimitReached: false,
   timeLimitReached: false,
   sessionActive: false,
 
-  setConfig: (config) => 
-    set({ 
-      config, 
-      moneyCounter: config.startingMoney 
-    }),
+  setConfig: (config) => {
+    const inputClickCounts: Record<string, number> = {};
+    const inputIntervalCounters: Record<string, number> = {};
+    for (const input of config.inputs ?? []) {
+      inputClickCounts[input.id] = 0;
+      inputIntervalCounters[input.id] = 0;
+    }
+    set({
+      config,
+      moneyCounter: config.startingMoney,
+      totalClicks: 0,
+      inputClickCounts,
+      inputIntervalCounters,
+    });
+  },
 
-  incrementClick: (button) =>
+  incrementClick: (inputId) =>
     set((state) => ({
-      clickCounts: {
-        ...state.clickCounts,
-        total: state.clickCounts.total + 1,
-        [button]: state.clickCounts[button] + 1,
+      totalClicks: state.totalClicks + 1,
+      inputClickCounts: {
+        ...state.inputClickCounts,
+        [inputId]: (state.inputClickCounts[inputId] ?? 0) + 1,
+      },
+    })),
+
+  incrementInterval: (inputId) => {
+    const current = get().inputIntervalCounters[inputId] ?? 0;
+    const next = current + 1;
+    set((state) => ({
+      inputIntervalCounters: {
+        ...state.inputIntervalCounters,
+        [inputId]: next,
+      },
+    }));
+    return next;
+  },
+
+  resetInterval: (inputId) =>
+    set((state) => ({
+      inputIntervalCounters: {
+        ...state.inputIntervalCounters,
+        [inputId]: 0,
       },
     })),
 
@@ -71,16 +97,21 @@ export const useSessionStore = create<SessionState>((set) => ({
     set({ sessionActive: false }),
 
   resetSession: () =>
-    set((state) => ({
-      moneyCounter: state.config?.startingMoney || 0,
-      clickCounts: {
-        total: 0,
-        left: 0,
-        middle: 0,
-        right: 0,
-      },
-      moneyLimitReached: false,
-      timeLimitReached: false,
-      sessionActive: false,
-    })),
+    set((state) => {
+      const inputClickCounts: Record<string, number> = {};
+      const inputIntervalCounters: Record<string, number> = {};
+      for (const input of state.config?.inputs ?? []) {
+        inputClickCounts[input.id] = 0;
+        inputIntervalCounters[input.id] = 0;
+      }
+      return {
+        moneyCounter: state.config?.startingMoney || 0,
+        totalClicks: 0,
+        inputClickCounts,
+        inputIntervalCounters,
+        moneyLimitReached: false,
+        timeLimitReached: false,
+        sessionActive: false,
+      };
+    }),
 }));

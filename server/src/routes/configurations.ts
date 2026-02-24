@@ -1,14 +1,17 @@
 import { Router } from 'express';
 import { statements } from '../db/index.js';
-import { SessionConfigSchema } from '../types/index.js';
+import { SessionConfigSchema, LegacySessionConfigSchema } from '../types/index.js';
 import { z } from 'zod';
 
 const router = Router();
 
+// Accept either new or legacy config format
+const AnyConfigSchema = z.union([SessionConfigSchema, LegacySessionConfigSchema]);
+
 const CreateConfigSchema = z.object({
   configId: z.string().min(1).max(100),
   name: z.string().min(1).max(200),
-  config: SessionConfigSchema,
+  config: AnyConfigSchema,
 });
 
 // Get all configurations (with optional archive filter)
