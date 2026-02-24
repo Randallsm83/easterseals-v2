@@ -4,8 +4,9 @@ import { Archive, ChevronDown, ChevronUp } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { api } from '../lib/api';
-import type { Configuration, SessionListItem } from '../types';
+import type { Configuration, SessionListItem, RawStoredConfig } from '../types';
 import { formatTimestamp } from '../lib/utils';
+import { normalizeConfig } from '../lib/normalizeConfig';
 
 function ConfigSessionsList({ configId }: { configId: string }) {
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
@@ -143,24 +144,41 @@ export function Configurations() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <div className="text-sm space-y-1">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Active Button:</span>
-                      <span className="font-medium capitalize">{parsedConfig.buttonActive}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Time Limit:</span>
-                      <span className="font-medium">{parsedConfig.timeLimit}s</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Money Awarded:</span>
-                      <span className="font-medium">${(parsedConfig.moneyAwarded / 100).toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Award Interval:</span>
-                      <span className="font-medium">{parsedConfig.awardInterval} clicks</span>
-                    </div>
-                  </div>
+                  {(() => {
+                    const normalized = normalizeConfig(parsedConfig as RawStoredConfig);
+                    const rewardedInputs = normalized.inputs.filter(i => i.isRewarded);
+                    return (
+                      <div className="text-sm space-y-1">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Time Limit:</span>
+                          <span className="font-medium">{normalized.timeLimit}s</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Inputs:</span>
+                          <span className="font-medium">
+                            {normalized.inputs.filter(i => i.type === 'screen').length} screen,{' '}
+                            {normalized.inputs.filter(i => i.type !== 'screen').length} physical
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Rewarded:</span>
+                          <span className="font-medium">
+                            {rewardedInputs.length > 0
+                              ? rewardedInputs.map(i => i.name || 'Unnamed').join(', ')
+                              : 'None'}
+                          </span>
+                        </div>
+                        {rewardedInputs.length > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Award:</span>
+                            <span className="font-medium">
+                              ${(rewardedInputs[0].moneyAwarded / 100).toFixed(2)} / {rewardedInputs[0].awardInterval} clicks
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Sessions toggle */}
                   {count > 0 && (
@@ -226,16 +244,21 @@ export function Configurations() {
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                      <div className="text-sm space-y-1">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Active Button:</span>
-                          <span className="font-medium capitalize">{parsedConfig.buttonActive}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Time Limit:</span>
-                          <span className="font-medium">{parsedConfig.timeLimit}s</span>
-                        </div>
-                      </div>
+                      {(() => {
+                        const normalized = normalizeConfig(parsedConfig as RawStoredConfig);
+                        return (
+                          <div className="text-sm space-y-1">
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Time Limit:</span>
+                              <span className="font-medium">{normalized.timeLimit}s</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Inputs:</span>
+                              <span className="font-medium">{normalized.inputs.length}</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
                       {count > 0 && (
                         <button
                           onClick={() => toggleExpanded(config.configId)}

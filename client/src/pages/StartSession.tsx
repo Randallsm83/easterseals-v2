@@ -5,7 +5,8 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { api } from '../lib/api';
-import type { Configuration } from '../types';
+import type { Configuration, RawStoredConfig } from '../types';
+import { normalizeConfig } from '../lib/normalizeConfig';
 
 export function StartSession() {
   const { configId } = useParams<{ configId: string }>();
@@ -119,31 +120,50 @@ export function StartSession() {
               )}
             </div>
 
-            <div className="space-y-3 pt-4 border-t">
-              <h3 className="font-medium">Configuration Summary:</h3>
-              <div className="text-sm space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Active Button:</span>
-                  <span className="capitalize">{config.buttonActive}</span>
+            {(() => {
+              const normalized = normalizeConfig(config as RawStoredConfig);
+              const rewardedInputs = normalized.inputs.filter(i => i.isRewarded);
+              return (
+                <div className="space-y-3 pt-4 border-t">
+                  <h3 className="font-medium">Configuration Summary:</h3>
+                  <div className="text-sm space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Time Limit:</span>
+                      <span>{normalized.timeLimit} seconds</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Inputs:</span>
+                      <span>
+                        {normalized.inputs.filter(i => i.type === 'screen').length} screen,{' '}
+                        {normalized.inputs.filter(i => i.type !== 'screen').length} physical
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Rewarded:</span>
+                      <span>
+                        {rewardedInputs.length > 0
+                          ? rewardedInputs.map(i => i.name || 'Unnamed').join(', ')
+                          : 'None'}
+                      </span>
+                    </div>
+                    {rewardedInputs.length > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Award:</span>
+                        <span>${(rewardedInputs[0].moneyAwarded / 100).toFixed(2)} per {rewardedInputs[0].awardInterval} clicks</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Money Limit:</span>
+                      <span>${(normalized.moneyLimit / 100).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Starting Money:</span>
+                      <span>${(normalized.startingMoney / 100).toFixed(2)}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Money Awarded:</span>
-                  <span>${(config.moneyAwarded / 100).toFixed(2)} per {config.awardInterval} clicks</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Time Limit:</span>
-                  <span>{config.timeLimit} seconds</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Money Limit:</span>
-                  <span>${(config.moneyLimit / 100).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Starting Money:</span>
-                  <span>${(config.startingMoney / 100).toFixed(2)}</span>
-                </div>
-              </div>
-            </div>
+              );
+            })()}
 
             {error && (
               <div className="bg-destructive/10 border border-destructive text-destructive px-4 py-3 rounded-lg">

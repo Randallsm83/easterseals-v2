@@ -14,8 +14,9 @@ import {
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { api } from '../lib/api';
-import type { SessionDataResponse, SessionListItem, ChartDataPoint, ButtonPosition, Participant, ButtonShape } from '../types';
+import type { SessionDataResponse, SessionListItem, ChartDataPoint, ButtonPosition, Participant, ButtonShape, RawStoredConfig } from '../types';
 import { calculateAccuracy, calculateClickRate, formatDuration, parseSqliteDate, formatTimestamp } from '../lib/utils';
+import { normalizeConfig } from '../lib/normalizeConfig';
 
 // Format money - display in dollars with $ sign
 function formatMoney(cents: number): string {
@@ -556,41 +557,68 @@ export function Analytics() {
                   </div>
                   <div className="rounded-lg border border-border/50 p-3 text-center">
                     <div className="text-lg font-bold">
-                      {sessionData.sessionConfig.playAwardSound ? 'on' : 'off'}
+                      {(() => {
+                        const normalized = normalizeConfig(sessionData.sessionConfig as unknown as RawStoredConfig);
+                        const anySound = normalized.inputs.some(i => i.isRewarded && i.playAwardSound);
+                        return anySound ? 'on' : 'off';
+                      })()}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">Award Sound</div>
                   </div>
                 </div>
 
-                {/* Active Button - highlighted */}
-                <div className="rounded-lg bg-primary/10 border border-primary/20 p-4 text-center">
-                  <div className="text-2xl font-bold text-primary capitalize">
-                    {sessionData.sessionConfig.buttonActive}
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-1">Active Button</div>
-                </div>
-
-                {/* Money Configuration - 3 columns */}
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
-                    <div className="text-xl font-bold">
-                      {formatMoney(sessionData.sessionConfig.moneyAwarded ?? 5)}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1">Money Awarded</div>
-                  </div>
-                  <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
-                    <div className="text-xl font-bold">
-                      {sessionData.sessionConfig.awardInterval ?? 10}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1">Award Interval</div>
-                  </div>
-                  <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
-                    <div className="text-xl font-bold">
-                      {formatMoney(sessionData.sessionConfig.startingMoney ?? 0)}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1">Starting Money</div>
-                  </div>
-                </div>
+                {/* Inputs Summary */}
+                {(() => {
+                  const normalized = normalizeConfig(sessionData.sessionConfig as unknown as RawStoredConfig);
+                  const rewardedInputs = normalized.inputs.filter(i => i.isRewarded);
+                  return (
+                    <>
+                      <div className="rounded-lg bg-primary/10 border border-primary/20 p-4 text-center">
+                        <div className="text-lg font-bold text-primary">
+                          {rewardedInputs.length > 0
+                            ? rewardedInputs.map(i => i.name || 'Unnamed').join(', ')
+                            : 'None'}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          Rewarded Input{rewardedInputs.length !== 1 ? 's' : ''}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3">
+                        {rewardedInputs.length > 0 ? (
+                          <>
+                            <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
+                              <div className="text-xl font-bold">
+                                {formatMoney(rewardedInputs[0].moneyAwarded)}
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-1">Money Awarded</div>
+                            </div>
+                            <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
+                              <div className="text-xl font-bold">
+                                {rewardedInputs[0].awardInterval}
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-1">Award Interval</div>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center col-span-2">
+                            <div className="text-sm text-muted-foreground">No rewards configured</div>
+                          </div>
+                        )}
+                        <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
+                          <div className="text-xl font-bold">
+                            {formatMoney(normalized.startingMoney ?? 0)}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">Starting Money</div>
+                        </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {normalized.inputs.length} input{normalized.inputs.length !== 1 ? 's' : ''} configured
+                        ({normalized.inputs.filter(i => i.type === 'screen').length} screen,{' '}
+                        {normalized.inputs.filter(i => i.type !== 'screen').length} physical)
+                      </div>
+                    </>
+                  );
+                })()}
               </CardContent>
             </Card>
           </div>
@@ -663,6 +691,63 @@ export function Analytics() {
                       );
                     })}
                   </div>
+
+                  {/* External Input Stats */}
+                  {(() => {
+                    const externalInputs = (sessionData.sessionConfig as unknown as Record<string, unknown>).externalInputs as Array<{
+                      id: string; name: string; inputLabel: string; isActive: boolean;
+                      moneyAwarded: number; awardInterval: number;
+                    }> | undefined;
+                    if (!externalInputs || externalInputs.length === 0) return null;
+
+                    // Count clicks per external input from the raw click events
+                    const externalClickCounts: Record<string, number> = {};
+                    for (const input of externalInputs) {
+                      externalClickCounts[input.id] = 0;
+                    }
+                    for (const click of sessionData.allClicks) {
+                      const raw = click as unknown as Record<string, unknown>;
+                      if (raw.inputId && typeof raw.inputId === 'string') {
+                        externalClickCounts[raw.inputId] = (externalClickCounts[raw.inputId] ?? 0) + 1;
+                      } else if (raw.buttonClicked && typeof raw.buttonClicked === 'string' &&
+                        !['left', 'middle', 'right'].includes(raw.buttonClicked)) {
+                        externalClickCounts[raw.buttonClicked] = (externalClickCounts[raw.buttonClicked] ?? 0) + 1;
+                      }
+                    }
+
+                    return (
+                      <>
+                        <div className="mt-6 mb-3">
+                          <h4 className="text-sm font-semibold text-muted-foreground">External Inputs</h4>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                          {externalInputs.map((input) => (
+                            <div key={input.id} className="relative">
+                              <div
+                                className="rounded-xl p-6 text-center transition-transform hover:scale-[1.02] border-2 border-border bg-muted/10"
+                              >
+                                <div className="text-xs font-mono text-muted-foreground mb-2">{input.inputLabel}</div>
+                                <div className="text-6xl font-bold mb-3">
+                                  {externalClickCounts[input.id] ?? 0}
+                                </div>
+                                <div className="text-sm font-semibold mb-4">{input.name || 'Unnamed Input'}</div>
+                                {input.isActive && (
+                                  <div className="text-xs text-muted-foreground">
+                                    Awards ${(input.moneyAwarded / 100).toFixed(2)} every {input.awardInterval} press{input.awardInterval !== 1 ? 'es' : ''}
+                                  </div>
+                                )}
+                                {input.isActive && (
+                                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-3 py-1 rounded-full font-semibold shadow-lg">
+                                    ★ Active
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    );
+                  })()}
                 </CardContent>
               </Card>
           )}
