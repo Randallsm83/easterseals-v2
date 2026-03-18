@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -17,6 +17,8 @@ export function StartSession() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [startedSessionId, setStartedSessionId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState(false);
 
   useEffect(() => {
     if (configId) {
@@ -61,8 +63,7 @@ export function StartSession() {
 
     try {
       const result = await api.startSession({ participantId, configId: configId! });
-      // Server returns the auto-generated sessionId (format: participantId-sequenceNumber)
-      navigate(`/session/${result.sessionId}`);
+      setStartedSessionId(result.sessionId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start session');
       setSubmitting(false);
@@ -171,14 +172,46 @@ export function StartSession() {
               </div>
             )}
 
-            <div className="flex gap-4">
+            {startedSessionId ? (
+              <div className="rounded-lg bg-primary/10 border border-primary/20 p-4 space-y-4">
+                <p className="text-xs text-muted-foreground">Session is ready. If monitoring, enter the session ID on your device first, then start below.</p>
+                <div className="flex gap-3">
+                  <Link to={`/session/${startedSessionId}`} className="flex-1">
+                    <Button className="w-full" size="lg">Start Session →</Button>
+                  </Link>
+                </div>
+                <div className="rounded-lg bg-background border border-border p-3 space-y-1">
+                  <p className="text-xs text-muted-foreground">Session ID — enter this on the Monitor page from another device:</p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 text-lg font-bold font-mono text-foreground select-all">
+                      {startedSessionId}
+                    </code>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        navigator.clipboard.writeText(startedSessionId).then(() => {
+                          setCopiedId(true);
+                          setTimeout(() => setCopiedId(false), 2000);
+                        });
+                      }}
+                    >
+                      {copiedId ? '✓ Copied' : 'Copy'}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-4">
               <Button type="submit" size="lg" disabled={submitting} className="flex-1">
-                {submitting ? 'Starting...' : 'Start Session'}
-              </Button>
-              <Button type="button" variant="outline" size="lg" onClick={() => navigate('/')}>
-                Cancel
-              </Button>
-            </div>
+                  {submitting ? 'Creating...' : 'Create Session'}
+                </Button>
+                <Button type="button" variant="outline" size="lg" onClick={() => navigate('/')}>
+                  Cancel
+                </Button>
+              </div>
+            )}
           </form>
         </CardContent>
       </Card>
