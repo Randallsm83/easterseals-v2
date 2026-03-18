@@ -18,81 +18,49 @@ import type { SessionDataResponse, SessionListItem, ChartDataPoint, ButtonPositi
 import { calculateAccuracy, calculateClickRate, formatDuration, parseSqliteDate, formatTimestamp } from '../lib/utils';
 import { normalizeConfig } from '../lib/normalizeConfig';
 
-// Format money - display in dollars with $ sign
 function formatMoney(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
-// Extract session number from composite sessionId (e.g., "100-1" -> "1")
 function getSessionNumber(sessionId: string): string {
   const parts = sessionId.split('-');
   return parts.length > 1 ? parts[parts.length - 1] : sessionId;
 }
 
-// Helper to get button color from session config (handles new and legacy formats)
 function getButtonColor(config: SessionDataResponse['sessionConfig'], position: 'left' | 'middle' | 'right'): string {
-  // Fallback colors if none found
   const fallbackColors = { left: '#5ccc96', middle: '#e39400', right: '#00a3cc' };
-  
-  // Try new format first (leftButton.color)
   const buttonKey = `${position}Button` as 'leftButton' | 'middleButton' | 'rightButton';
-  if (config[buttonKey]?.color) {
-    return config[buttonKey]!.color;
-  }
-  
-  // Try legacy format (leftButtonColor)
+  if (config[buttonKey]?.color) return config[buttonKey]!.color;
   const legacyKey = `${position}ButtonColor` as 'leftButtonColor' | 'middleButtonColor' | 'rightButtonColor';
-  if (config[legacyKey]) {
-    return config[legacyKey]!;
-  }
-  
+  if (config[legacyKey]) return config[legacyKey]!;
   return fallbackColors[position];
 }
 
-// Helper to get button shape from session config (handles new and legacy formats)
 function getButtonShape(config: SessionDataResponse['sessionConfig'], position: 'left' | 'middle' | 'right'): ButtonShape {
-  // Try new format first (leftButton.shape)
   const buttonKey = `${position}Button` as 'leftButton' | 'middleButton' | 'rightButton';
-  if (config[buttonKey]?.shape) {
-    return config[buttonKey]!.shape as ButtonShape;
-  }
-  
-  // Try legacy format (leftButtonShape)
+  if (config[buttonKey]?.shape) return config[buttonKey]!.shape as ButtonShape;
   const legacyKey = `${position}ButtonShape` as 'leftButtonShape' | 'middleButtonShape' | 'rightButtonShape';
-  if (config[legacyKey]) {
-    return config[legacyKey] as ButtonShape;
-  }
-  
+  if (config[legacyKey]) return config[legacyKey] as ButtonShape;
   return 'rectangle';
 }
 
-// SVG shape preview component
 function ShapePreview({ shape, color, size = 24 }: { shape: ButtonShape; color: string; size?: number }) {
   if (shape === 'none') {
-    // Hidden during session — show color swatch with dashed border
     return (
       <svg width={size} height={size} viewBox="0 0 24 24">
         <rect x="2" y="2" width="20" height="20" rx="2" fill={color} opacity={0.5} stroke={color} strokeWidth={1} strokeDasharray="3 2" />
       </svg>
     );
   }
-  
   return (
     <svg width={size} height={size} viewBox="0 0 24 24">
-      {shape === 'circle' && (
-        <circle cx="12" cy="12" r="10" fill={color} />
-      )}
-      {shape === 'square' && (
-        <rect x="2" y="2" width="20" height="20" fill={color} />
-      )}
-      {shape === 'rectangle' && (
-        <rect x="1" y="5" width="22" height="14" fill={color} />
-      )}
+      {shape === 'circle' && <circle cx="12" cy="12" r="10" fill={color} />}
+      {shape === 'square' && <rect x="2" y="2" width="20" height="20" fill={color} />}
+      {shape === 'rectangle' && <rect x="1" y="5" width="22" height="14" fill={color} />}
     </svg>
   );
 }
 
-// Convert hex color to rgba for background
 function hexToRgba(hex: string, alpha: number): string {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
@@ -104,28 +72,27 @@ export function Analytics() {
   const { sessionId: urlSessionId } = useParams<{ sessionId?: string }>();
   const [searchParams] = useSearchParams();
   const urlParticipantId = searchParams.get('participant');
-  
-  // Cascading dropdown state
+
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [selectedParticipantId, setSelectedParticipantId] = useState<string>('');
   const [participantSessions, setParticipantSessions] = useState<SessionListItem[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(urlSessionId || null);
   const [sessionData, setSessionData] = useState<SessionDataResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [notes, setNotes] = useState('');
+  const [notesSaving, setNotesSaving] = useState(false);
+  const [notesSaved, setNotesSaved] = useState(false);
 
-  // Load participants on mount
   useEffect(() => {
     loadParticipants();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // If URL has sessionId, extract participantId and load
   useEffect(() => {
     if (urlSessionId) {
-      // Session IDs are formatted as "participantId-sequenceNumber"
       const parts = urlSessionId.split('-');
       if (parts.length >= 2) {
-        const participantId = parts.slice(0, -1).join('-'); // Handle participant IDs with dashes
+        const participantId = parts.slice(0, -1).join('-');
         setSelectedParticipantId(participantId);
         loadParticipantSessions(participantId).then(() => {
           setSelectedSessionId(urlSessionId);
@@ -136,7 +103,6 @@ export function Analytics() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlSessionId]);
 
-  // If URL has ?participant= param, pre-select that participant
   useEffect(() => {
     if (urlParticipantId && !urlSessionId && participants.length > 0) {
       const found = participants.find(p => p.participantId === urlParticipantId);
@@ -152,8 +118,6 @@ export function Analytics() {
     try {
       const data = await api.getParticipants();
       setParticipants(data);
-      
-      // If no URL session or participant specified, select first participant
       if (!urlSessionId && !urlParticipantId && data.length > 0) {
         setSelectedParticipantId(data[0].participantId);
         await loadParticipantSessions(data[0].participantId);
@@ -166,15 +130,10 @@ export function Analytics() {
   }
 
   async function loadParticipantSessions(participantId: string) {
-    if (!participantId) {
-      setParticipantSessions([]);
-      return;
-    }
+    if (!participantId) { setParticipantSessions([]); return; }
     try {
       const data = await api.getParticipantSessions(participantId);
       setParticipantSessions(data);
-      
-      // Auto-select first session for this participant
       if (data.length > 0 && !urlSessionId) {
         setSelectedSessionId(data[0].sessionId);
         await loadSessionData(data[0].sessionId);
@@ -186,9 +145,15 @@ export function Analytics() {
 
   async function loadSessionData(sessionId: string) {
     setLoading(true);
+    setNotes('');
+    setNotesSaved(false);
     try {
-      const data = await api.getSessionData(sessionId);
+      const [data, notesData] = await Promise.all([
+        api.getSessionData(sessionId),
+        api.getSessionNotes(sessionId).catch(() => ({ sessionId, notes: '', updatedAt: null })),
+      ]);
       setSessionData(data);
+      setNotes(notesData.notes);
     } catch (error) {
       console.error('Failed to load session data:', error);
     } finally {
@@ -211,9 +176,38 @@ export function Analytics() {
   const chartData = useMemo((): ChartDataPoint[] => {
     if (!sessionData || !sessionData.startEvent) return [];
 
+    const rawConfig = sessionData.sessionConfig as unknown as RawStoredConfig;
+    const isNewModelConfig = Array.isArray(rawConfig.inputs);
     const startTime = parseSqliteDate(sessionData.startEvent.timestamp).getTime();
-    
-    // Track cumulative counts for old data format that doesn't have them
+
+    if (isNewModelConfig) {
+      let totalCount = 0;
+      const perInputCounts: Record<string, number> = {};
+
+      return sessionData.allClicks.map((click) => {
+        const clickTime = parseSqliteDate(click.timestamp).getTime();
+        const timeElapsed = (clickTime - startTime) / 1000;
+        const raw = click as unknown as Record<string, unknown>;
+        const inputId = (raw.inputId ?? click.buttonClicked) as string;
+
+        totalCount++;
+        perInputCounts[inputId] = (perInputCounts[inputId] ?? 0) + 1;
+
+        return {
+          timeElapsed: Number(timeElapsed.toFixed(2)),
+          timestamp: click.timestamp,
+          left: 0,
+          middle: 0,
+          right: 0,
+          total: click.clickInfo?.total || totalCount,
+          money: click.sessionInfo?.moneyCounter ?? 0,
+          buttonClicked: click.buttonClicked,
+          inputId,
+          inputCounts: { ...perInputCounts },
+        };
+      });
+    }
+
     let leftCount = 0;
     let middleCount = 0;
     let rightCount = 0;
@@ -227,14 +221,11 @@ export function Analytics() {
     return sessionData.allClicks.map((click) => {
       const clickTime = parseSqliteDate(click.timestamp).getTime();
       const timeElapsed = (clickTime - startTime) / 1000;
-      
-      // Check if data has new format (cumulative counts) or old format
       const hasNewFormat = click.clickInfo?.left !== undefined && click.clickInfo?.total !== undefined;
-      
+
       if (hasNewFormat) {
-        // sessionInfo may have moneyCounter (old) or pointsCounter (new/normalized)
-        const sessionMoney = (click.sessionInfo as { moneyCounter?: number; pointsCounter?: number })?.moneyCounter 
-          ?? (click.sessionInfo as { moneyCounter?: number; pointsCounter?: number })?.pointsCounter 
+        const sessionMoney = (click.sessionInfo as { moneyCounter?: number; pointsCounter?: number })?.moneyCounter
+          ?? (click.sessionInfo as { moneyCounter?: number; pointsCounter?: number })?.pointsCounter
           ?? 0;
         return {
           timeElapsed: Number(timeElapsed.toFixed(2)),
@@ -247,14 +238,12 @@ export function Analytics() {
           buttonClicked: click.buttonClicked,
         };
       }
-      
-      // Old format: compute cumulative counts
+
       totalCount++;
       if (click.buttonClicked === 'left') leftCount++;
       else if (click.buttonClicked === 'middle') middleCount++;
       else if (click.buttonClicked === 'right') rightCount++;
-      
-      // Compute money for old data
+
       if (click.buttonClicked === activeButton) {
         correctClicksSinceLastAward++;
         if (correctClicksSinceLastAward >= awardInterval) {
@@ -280,41 +269,43 @@ export function Analytics() {
     if (!sessionData || !sessionData.startEvent) return null;
 
     const startTime = parseSqliteDate(sessionData.startEvent.timestamp).getTime();
-    // For sessions without end event, use last click timestamp instead of Date.now()
     let endTime: number;
     if (sessionData.endEvent) {
       endTime = parseSqliteDate(sessionData.endEvent.timestamp).getTime();
     } else if (sessionData.allClicks.length > 0) {
       endTime = parseSqliteDate(sessionData.allClicks[sessionData.allClicks.length - 1].timestamp).getTime();
     } else {
-      endTime = startTime; // No clicks, duration is 0
+      endTime = startTime;
     }
     const duration = (endTime - startTime) / 1000;
-
     const totalClicks = sessionData.allClicks.length;
-    const correctClicks = sessionData.allClicks.filter(
-      (c) => c.buttonClicked === sessionData.sessionConfig.buttonActive
-    ).length;
 
-    // Get final money from various sources - old event format stores in click value directly
+    const rawConfig = sessionData.sessionConfig as unknown as RawStoredConfig;
+    let correctClicks: number;
+    if (Array.isArray(rawConfig.inputs)) {
+      const normalizedConf = normalizeConfig(rawConfig);
+      const rewardedIds = new Set(normalizedConf.inputs.filter(i => i.isRewarded).map(i => i.id));
+      correctClicks = sessionData.allClicks.filter(c => {
+        const raw = c as unknown as Record<string, unknown>;
+        return rewardedIds.has((raw.inputId ?? c.buttonClicked) as string);
+      }).length;
+    } else {
+      correctClicks = sessionData.allClicks.filter(
+        (c) => c.buttonClicked === sessionData.sessionConfig.buttonActive
+      ).length;
+    }
+
     let finalMoney: number | undefined;
-    
-    // Try endEvent first
     if (sessionData.endEvent?.value?.moneyCounter !== undefined) {
       finalMoney = sessionData.endEvent.value.moneyCounter;
-    }
-    // Try last click's sessionInfo
-    else if (sessionData.allClicks.length > 0) {
+    } else if (sessionData.allClicks.length > 0) {
       const lastClick = sessionData.allClicks[sessionData.allClicks.length - 1];
-      // Old format: value is JSON string with moneyCounter
       if (typeof lastClick.clickInfo === 'object' && 'moneyCounter' in lastClick.clickInfo) {
         finalMoney = (lastClick.clickInfo as { moneyCounter: number }).moneyCounter;
       } else if (lastClick.sessionInfo?.moneyCounter !== undefined) {
         finalMoney = lastClick.sessionInfo.moneyCounter;
       }
     }
-    
-    // Fallback to computed chartData
     if (finalMoney === undefined && chartData.length > 0) {
       finalMoney = chartData[chartData.length - 1].money;
     }
@@ -330,57 +321,82 @@ export function Analytics() {
     };
   }, [sessionData, chartData]);
 
-  // Calculate detailed click stats per button
-  const clickStats = useMemo(() => {
+  const clickStats = useMemo((): Record<string, {
+    firstClickTime: string | null;
+    timeToFirstClick: number | null;
+    totalClicks: number;
+  }> | null => {
     if (!sessionData || !sessionData.startEvent) return null;
 
     const startTime = parseSqliteDate(sessionData.startEvent.timestamp).getTime();
+    const rawConfig = sessionData.sessionConfig as unknown as RawStoredConfig;
+
+    if (Array.isArray(rawConfig.inputs)) {
+      const result: Record<string, { firstClickTime: string | null; timeToFirstClick: number | null; totalClicks: number }> = {};
+      for (const click of sessionData.allClicks) {
+        const raw = click as unknown as Record<string, unknown>;
+        const inputId = (raw.inputId ?? click.buttonClicked) as string;
+        if (!result[inputId]) {
+          result[inputId] = { firstClickTime: null, timeToFirstClick: null, totalClicks: 0 };
+        }
+        result[inputId].totalClicks++;
+        if (!result[inputId].firstClickTime) {
+          const t = parseSqliteDate(click.timestamp);
+          result[inputId].firstClickTime = t.toLocaleTimeString('en-US', {
+            hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit',
+            fractionalSecondDigits: 2,
+          });
+          result[inputId].timeToFirstClick = Number(((t.getTime() - startTime) / 1000).toFixed(3));
+        }
+      }
+      return result;
+    }
+
     const buttons: ButtonPosition[] = ['left', 'middle', 'right'];
-    
-    const result: Record<ButtonPosition, {
-      firstClickTime: string | null;
-      timeToFirstClick: number | null;
-      totalClicks: number;
-    }> = {
+    const result: Record<string, { firstClickTime: string | null; timeToFirstClick: number | null; totalClicks: number }> = {
       left: { firstClickTime: null, timeToFirstClick: null, totalClicks: 0 },
       middle: { firstClickTime: null, timeToFirstClick: null, totalClicks: 0 },
       right: { firstClickTime: null, timeToFirstClick: null, totalClicks: 0 },
     };
-
     for (const button of buttons) {
       const buttonClicks = sessionData.allClicks.filter(c => c.buttonClicked === button);
       result[button].totalClicks = buttonClicks.length;
-      
       if (buttonClicks.length > 0) {
-        const firstClick = buttonClicks[0];
-        const firstClickTime = parseSqliteDate(firstClick.timestamp);
-        result[button].firstClickTime = firstClickTime.toLocaleTimeString('en-US', { 
-          hour12: false, 
-          hour: '2-digit', 
-          minute: '2-digit', 
-          second: '2-digit',
-          fractionalSecondDigits: 2
+        const t = parseSqliteDate(buttonClicks[0].timestamp);
+        result[button].firstClickTime = t.toLocaleTimeString('en-US', {
+          hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit',
+          fractionalSecondDigits: 2,
         });
-        result[button].timeToFirstClick = Number(((firstClickTime.getTime() - startTime) / 1000).toFixed(3));
+        result[button].timeToFirstClick = Number(((t.getTime() - startTime) / 1000).toFixed(3));
       }
     }
-
     return result;
   }, [sessionData]);
 
   const exportCSV = () => {
     if (!chartData.length || !sessionData) return;
 
-    const headers = ['Time (s)', 'Button', 'Total Clicks', 'Left', 'Middle', 'Right', 'Money (cents)'];
-    const rows = chartData.map((d) => [
-      d.timeElapsed,
-      d.buttonClicked,
-      d.total,
-      d.left,
-      d.middle,
-      d.right,
-      d.money,
-    ]);
+    const rawConfig = sessionData.sessionConfig as unknown as RawStoredConfig;
+    const isNewModelExport = Array.isArray(rawConfig.inputs);
+    let headers: string[];
+    let rows: unknown[][];
+
+    if (isNewModelExport) {
+      const normalizedConf = normalizeConfig(rawConfig);
+      const inputNameMap = new Map(normalizedConf.inputs.map(i => [i.id, i.name]));
+      headers = ['Time (s)', 'Input ID', 'Input Name', 'Total Clicks', 'Input Clicks', 'Money (cents)'];
+      rows = chartData.map((d) => [
+        d.timeElapsed,
+        d.inputId ?? '',
+        d.inputId ? (inputNameMap.get(d.inputId) ?? '') : '',
+        d.total,
+        d.inputId ? (d.inputCounts?.[d.inputId] ?? 0) : 0,
+        d.money,
+      ]);
+    } else {
+      headers = ['Time (s)', 'Button', 'Total Clicks', 'Left', 'Middle', 'Right', 'Money (cents)'];
+      rows = chartData.map((d) => [d.timeElapsed, d.buttonClicked, d.total, d.left, d.middle, d.right, d.money]);
+    }
 
     const csv = [headers, ...rows].map((row) => row.join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -388,6 +404,38 @@ export function Analytics() {
     const a = document.createElement('a');
     a.href = url;
     a.download = `session-${selectedSessionId}-data.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const saveNotes = async () => {
+    if (!selectedSessionId) return;
+    setNotesSaving(true);
+    try {
+      await api.updateSessionNotes(selectedSessionId, notes);
+      setNotesSaved(true);
+      setTimeout(() => setNotesSaved(false), 2000);
+    } catch (error) {
+      console.error('Failed to save notes:', error);
+    } finally {
+      setNotesSaving(false);
+    }
+  };
+
+  const exportJSON = () => {
+    if (!sessionData) return;
+    const data = {
+      sessionId: selectedSessionId,
+      sessionConfig: sessionData.sessionConfig,
+      startEvent: sessionData.startEvent,
+      endEvent: sessionData.endEvent,
+      clicks: sessionData.allClicks,
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `session-${selectedSessionId}-data.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -407,14 +455,16 @@ export function Analytics() {
           <h1 className="text-3xl font-bold">Analytics Dashboard</h1>
           <p className="text-muted-foreground mt-2">Session data visualization and analysis</p>
         </div>
-        {chartData.length > 0 && (
-          <Button onClick={exportCSV} variant="outline">
-            Export CSV
-          </Button>
+        {sessionData && (
+          <div className="flex gap-2">
+            {chartData.length > 0 && (
+              <Button onClick={exportCSV} variant="outline">Export CSV</Button>
+            )}
+            <Button onClick={exportJSON} variant="outline">Export JSON</Button>
+          </div>
         )}
       </div>
 
-      {/* Cascading Participant/Session Selectors */}
       <Card>
         <CardContent className="pt-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -463,9 +513,7 @@ export function Analytics() {
 
       {sessionData && stats && (
         <>
-          {/* Session Overview - Combined Config & Results */}
           <div className="grid gap-6 lg:grid-cols-2">
-            {/* Left Column - Session Info */}
             <Card className="bg-gradient-to-br from-card to-card/80">
               <CardHeader className="pb-4">
                 <CardTitle className="flex items-center gap-2">
@@ -473,13 +521,12 @@ export function Analytics() {
                   Session Overview
                 </CardTitle>
                 <CardDescription>
-                  {sessionData.startEvent ? parseSqliteDate(sessionData.startEvent.timestamp).toLocaleDateString('en-US', { 
-                    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+                  {sessionData.startEvent ? parseSqliteDate(sessionData.startEvent.timestamp).toLocaleDateString('en-US', {
+                    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
                   }) : 'N/A'}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Time Info */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="rounded-lg border border-border/50 p-4 text-center">
                     <div className="text-xl font-mono font-bold">
@@ -494,8 +541,6 @@ export function Analytics() {
                     <div className="text-xs text-muted-foreground mt-1">End Time</div>
                   </div>
                 </div>
-
-                {/* Key Metrics */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="rounded-lg bg-primary/10 border border-primary/20 p-4 text-center">
                     <div className="text-3xl font-bold text-primary">{formatDuration(stats.duration)}</div>
@@ -506,8 +551,6 @@ export function Analytics() {
                     <div className="text-xs text-muted-foreground mt-1">Money Earned</div>
                   </div>
                 </div>
-
-                {/* Performance Stats */}
                 <div className="grid grid-cols-3 gap-3">
                   <div className="text-center p-3 rounded-lg border border-border/50 bg-muted/30">
                     <div className="text-2xl font-bold">{stats.totalClicks}</div>
@@ -525,7 +568,6 @@ export function Analytics() {
               </CardContent>
             </Card>
 
-            {/* Right Column - Configuration */}
             <Card className="bg-gradient-to-br from-card to-card/80">
               <CardHeader className="pb-4">
                 <CardTitle className="flex items-center gap-2">
@@ -535,18 +577,13 @@ export function Analytics() {
                 <CardDescription>Session parameters</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Session Limits - 4 columns */}
                 <div className="grid grid-cols-4 gap-3">
                   <div className="rounded-lg border border-border/50 p-3 text-center">
-                    <div className="text-lg font-bold">
-                      {sessionData.sessionConfig.timeLimit ?? 60}s
-                    </div>
+                    <div className="text-lg font-bold">{sessionData.sessionConfig.timeLimit ?? 60}s</div>
                     <div className="text-xs text-muted-foreground mt-1">Time Limit</div>
                   </div>
                   <div className="rounded-lg border border-border/50 p-3 text-center">
-                    <div className="text-lg font-bold">
-                      {formatMoney(sessionData.sessionConfig.moneyLimit ?? 100)}
-                    </div>
+                    <div className="text-lg font-bold">{formatMoney(sessionData.sessionConfig.moneyLimit ?? 100)}</div>
                     <div className="text-xs text-muted-foreground mt-1">Money Limit</div>
                   </div>
                   <div className="rounded-lg border border-border/50 p-3 text-center">
@@ -559,15 +596,12 @@ export function Analytics() {
                     <div className="text-lg font-bold">
                       {(() => {
                         const normalized = normalizeConfig(sessionData.sessionConfig as unknown as RawStoredConfig);
-                        const anySound = normalized.inputs.some(i => i.isRewarded && i.playAwardSound);
-                        return anySound ? 'on' : 'off';
+                        return normalized.inputs.some(i => i.isRewarded && i.playAwardSound) ? 'on' : 'off';
                       })()}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">Award Sound</div>
                   </div>
                 </div>
-
-                {/* Inputs Summary */}
                 {(() => {
                   const normalized = normalizeConfig(sessionData.sessionConfig as unknown as RawStoredConfig);
                   const rewardedInputs = normalized.inputs.filter(i => i.isRewarded);
@@ -587,15 +621,11 @@ export function Analytics() {
                         {rewardedInputs.length > 0 ? (
                           <>
                             <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
-                              <div className="text-xl font-bold">
-                                {formatMoney(rewardedInputs[0].moneyAwarded)}
-                              </div>
+                              <div className="text-xl font-bold">{formatMoney(rewardedInputs[0].moneyAwarded)}</div>
                               <div className="text-xs text-muted-foreground mt-1">Money Awarded</div>
                             </div>
                             <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
-                              <div className="text-xl font-bold">
-                                {rewardedInputs[0].awardInterval}
-                              </div>
+                              <div className="text-xl font-bold">{rewardedInputs[0].awardInterval}</div>
                               <div className="text-xs text-muted-foreground mt-1">Award Interval</div>
                             </div>
                           </>
@@ -605,9 +635,7 @@ export function Analytics() {
                           </div>
                         )}
                         <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
-                          <div className="text-xl font-bold">
-                            {formatMoney(normalized.startingMoney ?? 0)}
-                          </div>
+                          <div className="text-xl font-bold">{formatMoney(normalized.startingMoney ?? 0)}</div>
                           <div className="text-xs text-muted-foreground mt-1">Starting Money</div>
                         </div>
                       </div>
@@ -623,134 +651,244 @@ export function Analytics() {
             </Card>
           </div>
 
-          {/* Shared high-contrast palette for analytics readability */}
           {(() => {
-            const CHART_COLORS = { left: '#5ccc96', middle: '#e39400', right: '#00a3cc' };
+            const rawConfig = sessionData.sessionConfig as unknown as RawStoredConfig;
+            const isNewModelCharts = Array.isArray(rawConfig.inputs);
             const DOT_SIZE = 5;
             const colorDot = (color: string) => (props: { cx?: number; cy?: number }) => (
               <circle cx={props.cx} cy={props.cy} r={DOT_SIZE} fill={color} stroke={color} strokeWidth={1} />
             );
+
+            if (isNewModelCharts) {
+              const CHART_PALETTE = ['#5ccc96', '#e39400', '#00a3cc', '#b3a1e6', '#ce6f8f', '#42b3c2', '#f2ce00'];
+              const normalizedConf = normalizeConfig(rawConfig);
+              const inputsWithColors = normalizedConf.inputs.map((input, i) => ({
+                ...input,
+                chartColor: input.color ?? CHART_PALETTE[i % CHART_PALETTE.length],
+              }));
+
+              return (
+                <>
+                  {clickStats && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Click Distribution</CardTitle>
+                        <CardDescription>Breakdown by input</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                          {inputsWithColors.map((input) => {
+                            const stat = clickStats[input.id] ?? { totalClicks: 0, firstClickTime: null, timeToFirstClick: null };
+                            return (
+                              <div key={input.id} className="relative">
+                                <div
+                                  className="rounded-xl p-6 text-center transition-transform hover:scale-[1.02]"
+                                  style={{ backgroundColor: hexToRgba(input.chartColor, 0.08), border: `2px solid ${input.chartColor}` }}
+                                >
+                                  <div className="text-lg font-bold mb-1" style={{ color: input.chartColor }}>
+                                    {input.name || 'Unnamed'}
+                                  </div>
+                                  {input.type === 'screen' && input.shape && input.shape !== 'none' && (
+                                    <div className="flex justify-center mb-2">
+                                      <ShapePreview shape={input.shape} color={input.color ?? input.chartColor} size={28} />
+                                    </div>
+                                  )}
+                                  {input.type !== 'screen' && (
+                                    <div className="text-xs font-mono text-muted-foreground mb-2 truncate">
+                                      {input.inputLabel ?? input.type}
+                                    </div>
+                                  )}
+                                  <div className="text-6xl font-bold mb-3" style={{ color: input.chartColor }}>
+                                    {stat.totalClicks}
+                                  </div>
+                                  <div className="space-y-3 text-sm">
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-muted-foreground">First Click</span>
+                                      <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
+                                        {stat.firstClickTime ?? '—'}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-muted-foreground">Time to Click</span>
+                                      <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
+                                        {stat.timeToFirstClick !== null ? `${stat.timeToFirstClick}s` : '—'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  {input.isRewarded && (
+                                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-3 py-1 rounded-full font-semibold shadow-lg">
+                                      ★ Rewarded
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Click Timeline - Per Input</CardTitle>
+                      <CardDescription>
+                        Cumulative clicks per input over time
+                        <span className="ml-6 inline-flex flex-wrap gap-4">
+                          {inputsWithColors.map(input => (
+                            <span key={input.id} className="inline-flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: input.chartColor }} />
+                              {input.name || 'Input'}
+                            </span>
+                          ))}
+                        </span>
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={350}>
+                        <ScatterChart margin={{ top: 10, right: 30, bottom: 50, left: 60 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#444" />
+                          <XAxis dataKey="x" type="number" name="Time"
+                            domain={[0, (dataMax: number) => Math.ceil(dataMax)]}
+                            stroke="#888" tick={{ fill: '#888' }} allowDecimals={false}
+                            label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
+                          />
+                          <YAxis dataKey="y" type="number" name="Clicks"
+                            domain={[0, (dataMax: number) => Math.max(1, Math.ceil(dataMax))]}
+                            stroke="#888" tick={{ fill: '#888' }} allowDecimals={false}
+                            label={{ value: 'Clicks', angle: -90, position: 'insideLeft', offset: -10, fill: '#888' }}
+                          />
+                          <Tooltip cursor={{ strokeDasharray: '3 3' }}
+                            contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
+                            labelStyle={{ color: '#fff' }}
+                            formatter={(value: number, name: string) => [value, name]}
+                            labelFormatter={(value: number) => `Time: ${value.toFixed(1)}s`}
+                          />
+                          {inputsWithColors.map(input => (
+                            <Scatter key={input.id} name={input.name || 'Input'}
+                              data={chartData.filter(d => d.inputId === input.id).map(d => ({
+                                x: d.timeElapsed, y: d.inputCounts?.[input.id] ?? 0,
+                              }))}
+                              fill={input.chartColor} shape={colorDot(input.chartColor)}
+                            />
+                          ))}
+                        </ScatterChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Click Timeline - Total Clicks</CardTitle>
+                      <CardDescription>
+                        All clicks colored by input
+                        <span className="ml-6 inline-flex flex-wrap gap-4">
+                          {inputsWithColors.map(input => (
+                            <span key={input.id} className="inline-flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: input.chartColor }} />
+                              {input.name || 'Input'}
+                            </span>
+                          ))}
+                        </span>
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={350}>
+                        <ScatterChart margin={{ top: 10, right: 30, bottom: 50, left: 60 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#444" />
+                          <XAxis dataKey="x" type="number" name="Time"
+                            domain={[0, (dataMax: number) => Math.ceil(dataMax)]}
+                            stroke="#888" tick={{ fill: '#888' }} allowDecimals={false}
+                            label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
+                          />
+                          <YAxis dataKey="y" type="number" name="Total"
+                            domain={[0, (dataMax: number) => Math.max(1, Math.ceil(dataMax))]}
+                            stroke="#888" tick={{ fill: '#888' }} allowDecimals={false}
+                            label={{ value: 'Total Clicks', angle: -90, position: 'insideLeft', offset: -10, fill: '#888' }}
+                          />
+                          <Tooltip cursor={{ strokeDasharray: '3 3' }}
+                            contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
+                            labelStyle={{ color: '#fff' }}
+                            formatter={(value: number, name: string) => [value, name]}
+                            labelFormatter={(value: number) => `Time: ${value.toFixed(1)}s`}
+                          />
+                          {inputsWithColors.map(input => (
+                            <Scatter key={input.id} name={input.name || 'Input'}
+                              data={chartData.filter(d => d.inputId === input.id).map(d => ({
+                                x: d.timeElapsed, y: d.total,
+                              }))}
+                              fill={input.chartColor} shape={colorDot(input.chartColor)}
+                            />
+                          ))}
+                        </ScatterChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                </>
+              );
+            }
+
+            const CHART_COLORS = { left: '#5ccc96', middle: '#e39400', right: '#00a3cc' };
             const positions = ['left', 'middle', 'right'] as const;
-            
+
             return (
               <>
-          {/* Click Distribution - Visual Cards */}
-          {clickStats && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Click Distribution</CardTitle>
-                  <CardDescription>Detailed breakdown by button</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {positions.map((position) => {
-                      const chartColor = CHART_COLORS[position];
-                      const configColor = getButtonColor(sessionData.sessionConfig, position);
-                      const shape = getButtonShape(sessionData.sessionConfig, position);
-                      const stat = clickStats[position];
-                      const isActive = sessionData.sessionConfig.buttonActive === position;
-
-                      // Skip buttons that were hidden during the session
-                      if (shape === 'none') return null;
-
-                      return (
-                        <div key={position} className="relative">
-                          <div
-                            className="rounded-xl p-6 text-center transition-transform hover:scale-[1.02]"
-                            style={{ backgroundColor: hexToRgba(chartColor, 0.08), border: `2px solid ${chartColor}` }}
-                          >
-                            <div className="flex justify-center items-center gap-2 mb-3">
-                              <ShapePreview shape={shape} color={configColor} size={32} />
-                              <span className="text-xs text-muted-foreground font-mono">{configColor}</span>
-                            </div>
-                            <div className="text-6xl font-bold mb-3" style={{ color: chartColor }}>
-                              {stat.totalClicks}
-                            </div>
-                            <div className="text-sm font-semibold mb-4 capitalize" style={{ color: chartColor }}>{position} Button</div>
-                            <div className="space-y-3 text-sm">
-                              <div className="flex justify-between items-center">
-                                <span className="text-muted-foreground">First Click</span>
-                                <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
-                                  {stat.firstClickTime ?? '—'}
-                                </span>
-                              </div>
-                              <div className="flex justify-between items-center">
-                                <span className="text-muted-foreground">Time to Click</span>
-                                <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
-                                  {stat.timeToFirstClick !== null ? `${stat.timeToFirstClick}s` : '—'}
-                                </span>
-                              </div>
-                            </div>
-                            {isActive && (
-                              <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-3 py-1 rounded-full font-semibold shadow-lg">
-                                ★ Active
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* External Input Stats */}
-                  {(() => {
-                    const externalInputs = (sessionData.sessionConfig as unknown as Record<string, unknown>).externalInputs as Array<{
-                      id: string; name: string; inputLabel: string; isActive: boolean;
-                      moneyAwarded: number; awardInterval: number;
-                    }> | undefined;
-                    if (!externalInputs || externalInputs.length === 0) return null;
-
-                    // Count clicks per external input from the raw click events
-                    const externalClickCounts: Record<string, number> = {};
-                    for (const input of externalInputs) {
-                      externalClickCounts[input.id] = 0;
-                    }
-                    for (const click of sessionData.allClicks) {
-                      const raw = click as unknown as Record<string, unknown>;
-                      if (raw.inputId && typeof raw.inputId === 'string') {
-                        externalClickCounts[raw.inputId] = (externalClickCounts[raw.inputId] ?? 0) + 1;
-                      } else if (raw.buttonClicked && typeof raw.buttonClicked === 'string' &&
-                        !['left', 'middle', 'right'].includes(raw.buttonClicked)) {
-                        externalClickCounts[raw.buttonClicked] = (externalClickCounts[raw.buttonClicked] ?? 0) + 1;
-                      }
-                    }
-
-                    return (
-                      <>
-                        <div className="mt-6 mb-3">
-                          <h4 className="text-sm font-semibold text-muted-foreground">External Inputs</h4>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                          {externalInputs.map((input) => (
-                            <div key={input.id} className="relative">
+                {clickStats && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Click Distribution</CardTitle>
+                      <CardDescription>Detailed breakdown by button</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {positions.map((position) => {
+                          const chartColor = CHART_COLORS[position];
+                          const configColor = getButtonColor(sessionData.sessionConfig, position);
+                          const shape = getButtonShape(sessionData.sessionConfig, position);
+                          const stat = clickStats[position] ?? { totalClicks: 0, firstClickTime: null, timeToFirstClick: null };
+                          const isActive = sessionData.sessionConfig.buttonActive === position;
+                          if (shape === 'none') return null;
+                          return (
+                            <div key={position} className="relative">
                               <div
-                                className="rounded-xl p-6 text-center transition-transform hover:scale-[1.02] border-2 border-border bg-muted/10"
+                                className="rounded-xl p-6 text-center transition-transform hover:scale-[1.02]"
+                                style={{ backgroundColor: hexToRgba(chartColor, 0.08), border: `2px solid ${chartColor}` }}
                               >
-                                <div className="text-xs font-mono text-muted-foreground mb-2">{input.inputLabel}</div>
-                                <div className="text-6xl font-bold mb-3">
-                                  {externalClickCounts[input.id] ?? 0}
+                                <div className="flex justify-center items-center gap-2 mb-3">
+                                  <ShapePreview shape={shape} color={configColor} size={32} />
+                                  <span className="text-xs text-muted-foreground font-mono">{configColor}</span>
                                 </div>
-                                <div className="text-sm font-semibold mb-4">{input.name || 'Unnamed Input'}</div>
-                                {input.isActive && (
-                                  <div className="text-xs text-muted-foreground">
-                                    Awards ${(input.moneyAwarded / 100).toFixed(2)} every {input.awardInterval} press{input.awardInterval !== 1 ? 'es' : ''}
+                                <div className="text-6xl font-bold mb-3" style={{ color: chartColor }}>
+                                  {stat.totalClicks}
+                                </div>
+                                <div className="text-sm font-semibold mb-4 capitalize" style={{ color: chartColor }}>{position} Button</div>
+                                <div className="space-y-3 text-sm">
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-muted-foreground">First Click</span>
+                                    <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
+                                      {stat.firstClickTime ?? '—'}
+                                    </span>
                                   </div>
-                                )}
-                                {input.isActive && (
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-muted-foreground">Time to Click</span>
+                                    <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
+                                      {stat.timeToFirstClick !== null ? `${stat.timeToFirstClick}s` : '—'}
+                                    </span>
+                                  </div>
+                                </div>
+                                {isActive && (
                                   <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-3 py-1 rounded-full font-semibold shadow-lg">
                                     ★ Active
                                   </div>
                                 )}
                               </div>
                             </div>
-                          ))}
-                        </div>
-                      </>
-                    );
-                  })()}
-                </CardContent>
-              </Card>
-          )}
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
 
                 <Card>
                   <CardHeader>
@@ -758,18 +896,12 @@ export function Analytics() {
                     <CardDescription>
                       Cumulative clicks per button over time
                       <span className="ml-6 inline-flex gap-4">
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: CHART_COLORS.left }} />
-                          Left
-                        </span>
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: CHART_COLORS.middle }} />
-                          Middle
-                        </span>
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: CHART_COLORS.right }} />
-                          Right
-                        </span>
+                        {positions.map(pos => (
+                          <span key={pos} className="inline-flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: CHART_COLORS[pos] }} />
+                            {pos.charAt(0).toUpperCase() + pos.slice(1)}
+                          </span>
+                        ))}
                       </span>
                     </CardDescription>
                   </CardHeader>
@@ -777,50 +909,33 @@ export function Analytics() {
                     <ResponsiveContainer width="100%" height={350}>
                       <ScatterChart margin={{ top: 10, right: 30, bottom: 50, left: 60 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-                        <XAxis
-                          dataKey="x"
-                          type="number"
-                          name="Time"
+                        <XAxis dataKey="x" type="number" name="Time"
                           domain={[0, (dataMax: number) => Math.ceil(dataMax)]}
-                          stroke="#888"
-                          tick={{ fill: '#888' }}
-                          allowDecimals={false}
+                          stroke="#888" tick={{ fill: '#888' }} allowDecimals={false}
                           label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
                         />
-                        <YAxis
-                          dataKey="y"
-                          type="number"
-                          name="Clicks"
+                        <YAxis dataKey="y" type="number" name="Clicks"
                           domain={[0, (dataMax: number) => Math.max(1, Math.ceil(dataMax))]}
-                          stroke="#888"
-                          tick={{ fill: '#888' }}
-                          allowDecimals={false}
+                          stroke="#888" tick={{ fill: '#888' }} allowDecimals={false}
                           label={{ value: 'Clicks', angle: -90, position: 'insideLeft', offset: -10, fill: '#888' }}
                         />
-                        <Tooltip
-                          cursor={{ strokeDasharray: '3 3' }}
+                        <Tooltip cursor={{ strokeDasharray: '3 3' }}
                           contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
                           labelStyle={{ color: '#fff' }}
                           formatter={(value: number, name: string) => [value, name]}
                           labelFormatter={(value: number) => `Time: ${value.toFixed(1)}s`}
                         />
-                        <Scatter
-                          name="Left Button"
+                        <Scatter name="Left Button"
                           data={chartData.filter((d) => d.buttonClicked === 'left').map(d => ({ x: d.timeElapsed, y: d.left }))}
-                          fill={CHART_COLORS.left}
-                          shape={colorDot(CHART_COLORS.left)}
+                          fill={CHART_COLORS.left} shape={colorDot(CHART_COLORS.left)}
                         />
-                        <Scatter
-                          name="Middle Button"
+                        <Scatter name="Middle Button"
                           data={chartData.filter((d) => d.buttonClicked === 'middle').map(d => ({ x: d.timeElapsed, y: d.middle }))}
-                          fill={CHART_COLORS.middle}
-                          shape={colorDot(CHART_COLORS.middle)}
+                          fill={CHART_COLORS.middle} shape={colorDot(CHART_COLORS.middle)}
                         />
-                        <Scatter
-                          name="Right Button"
+                        <Scatter name="Right Button"
                           data={chartData.filter((d) => d.buttonClicked === 'right').map(d => ({ x: d.timeElapsed, y: d.right }))}
-                          fill={CHART_COLORS.right}
-                          shape={colorDot(CHART_COLORS.right)}
+                          fill={CHART_COLORS.right} shape={colorDot(CHART_COLORS.right)}
                         />
                       </ScatterChart>
                     </ResponsiveContainer>
@@ -833,18 +948,12 @@ export function Analytics() {
                     <CardDescription>
                       All clicks colored by button
                       <span className="ml-6 inline-flex gap-4">
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: CHART_COLORS.left }} />
-                          Left
-                        </span>
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: CHART_COLORS.middle }} />
-                          Middle
-                        </span>
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: CHART_COLORS.right }} />
-                          Right
-                        </span>
+                        {positions.map(pos => (
+                          <span key={pos} className="inline-flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: CHART_COLORS[pos] }} />
+                            {pos.charAt(0).toUpperCase() + pos.slice(1)}
+                          </span>
+                        ))}
                       </span>
                     </CardDescription>
                   </CardHeader>
@@ -852,50 +961,33 @@ export function Analytics() {
                     <ResponsiveContainer width="100%" height={350}>
                       <ScatterChart margin={{ top: 10, right: 30, bottom: 50, left: 60 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-                        <XAxis
-                          dataKey="x"
-                          type="number"
-                          name="Time"
+                        <XAxis dataKey="x" type="number" name="Time"
                           domain={[0, (dataMax: number) => Math.ceil(dataMax)]}
-                          stroke="#888"
-                          tick={{ fill: '#888' }}
-                          allowDecimals={false}
+                          stroke="#888" tick={{ fill: '#888' }} allowDecimals={false}
                           label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
                         />
-                        <YAxis
-                          dataKey="y"
-                          type="number"
-                          name="Total"
+                        <YAxis dataKey="y" type="number" name="Total"
                           domain={[0, (dataMax: number) => Math.max(1, Math.ceil(dataMax))]}
-                          stroke="#888"
-                          tick={{ fill: '#888' }}
-                          allowDecimals={false}
+                          stroke="#888" tick={{ fill: '#888' }} allowDecimals={false}
                           label={{ value: 'Total Clicks', angle: -90, position: 'insideLeft', offset: -10, fill: '#888' }}
                         />
-                        <Tooltip
-                          cursor={{ strokeDasharray: '3 3' }}
+                        <Tooltip cursor={{ strokeDasharray: '3 3' }}
                           contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
                           labelStyle={{ color: '#fff' }}
                           formatter={(value: number, name: string) => [value, name]}
                           labelFormatter={(value: number) => `Time: ${value.toFixed(1)}s`}
                         />
-                        <Scatter
-                          name="Left Button"
+                        <Scatter name="Left Button"
                           data={chartData.filter((d) => d.buttonClicked === 'left').map(d => ({ x: d.timeElapsed, y: d.total }))}
-                          fill={CHART_COLORS.left}
-                          shape={colorDot(CHART_COLORS.left)}
+                          fill={CHART_COLORS.left} shape={colorDot(CHART_COLORS.left)}
                         />
-                        <Scatter
-                          name="Middle Button"
+                        <Scatter name="Middle Button"
                           data={chartData.filter((d) => d.buttonClicked === 'middle').map(d => ({ x: d.timeElapsed, y: d.total }))}
-                          fill={CHART_COLORS.middle}
-                          shape={colorDot(CHART_COLORS.middle)}
+                          fill={CHART_COLORS.middle} shape={colorDot(CHART_COLORS.middle)}
                         />
-                        <Scatter
-                          name="Right Button"
+                        <Scatter name="Right Button"
                           data={chartData.filter((d) => d.buttonClicked === 'right').map(d => ({ x: d.timeElapsed, y: d.total }))}
-                          fill={CHART_COLORS.right}
-                          shape={colorDot(CHART_COLORS.right)}
+                          fill={CHART_COLORS.right} shape={colorDot(CHART_COLORS.right)}
                         />
                       </ScatterChart>
                     </ResponsiveContainer>
@@ -922,7 +1014,6 @@ export function Analytics() {
                     </div>
                   );
                 }
-                // Smart Y-axis: pad 10% around data range, snap to nice cent values
                 const range = maxMoney - minMoney;
                 const padding = range > 0 ? Math.ceil(range * 0.1) : Math.max(Math.ceil(maxMoney * 0.1), 50);
                 const yMin = Math.max(0, minMoney - padding);
@@ -931,25 +1022,17 @@ export function Analytics() {
                   <ResponsiveContainer width="100%" height={300}>
                     <LineChart data={chartData} margin={{ top: 20, right: 30, bottom: 50, left: 60 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-                      <XAxis
-                        dataKey="timeElapsed"
-                        type="number"
+                      <XAxis dataKey="timeElapsed" type="number"
                         domain={[0, (dataMax: number) => Math.ceil(dataMax)]}
-                        stroke="#888"
-                        tick={{ fill: '#888' }}
-                        allowDecimals={false}
+                        stroke="#888" tick={{ fill: '#888' }} allowDecimals={false}
                         label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
                       />
-                      <YAxis
-                        dataKey="money"
-                        domain={[yMin, yMax]}
-                        stroke="#888"
-                        tick={{ fill: '#888' }}
+                      <YAxis dataKey="money" domain={[yMin, yMax]}
+                        stroke="#888" tick={{ fill: '#888' }}
                         tickFormatter={(value: number) => `$${(value / 100).toFixed(2)}`}
                         label={{ value: 'Money Earned', angle: -90, position: 'insideLeft', offset: -15, fill: '#888' }}
                       />
-                      <Tooltip
-                        contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
+                      <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
                         labelStyle={{ color: '#fff' }}
                         formatter={(value: number) => [formatMoney(value), 'Money']}
                         labelFormatter={(value: number) => `Time: ${value.toFixed(1)}s`}
@@ -961,7 +1044,28 @@ export function Analytics() {
               })()}
             </CardContent>
           </Card>
-
+          <Card>
+            <CardHeader>
+              <CardTitle>Session Notes</CardTitle>
+              <CardDescription>Observations and annotations for this session</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <textarea
+                value={notes}
+                onChange={(e) => { setNotes(e.target.value); setNotesSaved(false); }}
+                placeholder="Add observations, notes, or comments about this session..."
+                className="w-full min-h-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm resize-y focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+              <div className="flex items-center gap-3">
+                <Button onClick={saveNotes} disabled={notesSaving} size="sm">
+                  {notesSaving ? 'Saving...' : 'Save Notes'}
+                </Button>
+                {notesSaved && (
+                  <span className="text-sm text-primary">✓ Saved</span>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </>
       )}
     </div>

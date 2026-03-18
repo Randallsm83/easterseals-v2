@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Archive, ChevronDown, ChevronUp } from 'lucide-react';
+import { Archive, ChevronDown, ChevronUp, Pencil } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { api } from '../lib/api';
@@ -204,6 +204,15 @@ export function Configurations() {
                     <Link to={`/start/${config.configId}`} className="flex-1">
                       <Button className="w-full" size="sm">
                         Start Session
+                      </Button>
+                    </Link>
+                    <Link to={`/config/${config.configId}/edit`}>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        title="Edit configuration"
+                      >
+                        <Pencil className="h-4 w-4" />
                       </Button>
                     </Link>
                     <Button 

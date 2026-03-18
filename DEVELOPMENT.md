@@ -10,30 +10,33 @@
 - React frontend with Vite + TypeScript
 - Tailwind CSS + shadcn/ui component library setup
 - React Router for navigation
-- Zustand state management
 - API client with type-safe methods
 - Base UI components (Button, Card, Input, Label)
-- **Dark theme as default** with comfortable color palette
 - Home page with session list and statistics
-- **Session Setup Form** with full button configuration
-- **Active Session Page** with clickable styled buttons
-- **Analytics Dashboard** with Recharts visualizations
+- Session setup with full button configuration (screen + physical inputs)
+- Active session page with clickable styled buttons
 - Click tracking and event logging
 - Session timer/limit enforcement
-- Data export (CSV)
-- All core features implemented and functional
+- Configuration management with archive/unarchive
+- Participant management
+- **Unified flexible input model** (gamepad, keyboard, screen buttons)
+- **Analytics Dashboard** — per-input stats, click timeline, money chart
+- **Session notes** — save text observations to any session
+- **Data export** — CSV and JSON
+- **Configuration editing** — edit existing configs via pencil icon
+- **Light/Dark mode toggle** — persisted to localStorage
+- **Live session monitoring** — researcher watches session in real time from a separate device via SSE
+- **Session comparison** — side-by-side stats and timelines for up to 5 sessions
+- **Input color swatches** — 16-color preset palette for physical inputs
 
-### 🎯 Optional Enhancements
-The following features could be added in the future:
+### 🎯 Possible Future Enhancements
 
-1. **Light/Dark Mode Toggle** - User-selectable theme switcher
-2. **Enhanced Animations** - Button click animations, point popup effects
-3. **Session Comparison** - Side-by-side comparison of multiple sessions
-4. **Real-time Monitoring** - Live view of active sessions
-5. **Session Templates** - Save and reuse session configurations
-6. **Advanced Analytics** - Heat maps, trend analysis, statistical tests
-7. **Export Options** - PDF reports, JSON export
-8. **Session Notes** - Add notes/observations to sessions
+1. **Enhanced Animations** - Button click animations, point popup effects
+2. **Session Templates** - Save and reuse session configurations
+3. **Advanced Analytics** - Heat maps, trend analysis, statistical tests
+4. **PDF Export** - Formatted report output
+5. **Participant-level notes** - Notes scoped to participant rather than individual sessions
+6. **Bulk session operations** - Archive, export, delete multiple sessions at once
 
 ## Getting Started
 
@@ -108,14 +111,31 @@ easterseals-v2/
 
 ### Sessions
 - `GET /api/sessions` - List all sessions with stats
-- `GET /api/sessions/:sessionId/config` - Get session configuration
 - `GET /api/sessions/:sessionId/data` - Get full session data (config + events)
-- `POST /api/sessions` - Create new session
+- `POST /api/sessions` - Create new session (returns session ID)
+- `POST /api/sessions/:sessionId/start` - Start a created session
+- `POST /api/sessions/:sessionId/end` - End a session
 - `DELETE /api/sessions/:sessionId` - Delete session
+- `GET /api/sessions/:sessionId/notes` - Get session notes
+- `PUT /api/sessions/:sessionId/notes` - Save session notes
+- `GET /api/sessions/:sessionId/stream` - SSE stream for live monitoring
 
 ### Events
 - `POST /api/events` - Log a session event (start/click/end)
 - `GET /api/events/:sessionId` - Get events for a session
+
+### Configurations
+- `GET /api/configurations` - List configurations
+- `GET /api/configurations/:id` - Get single configuration
+- `POST /api/configurations` - Create configuration
+- `PUT /api/configurations/:id` - Update configuration
+- `POST /api/configurations/:id/archive` - Archive
+- `POST /api/configurations/:id/unarchive` - Unarchive
+
+### Participants
+- `GET /api/participants` - List participants
+- `POST /api/participants` - Create participant
+- `GET /api/participants/:id/sessions` - Sessions for a participant
 
 ## Database Schema
 
@@ -131,40 +151,12 @@ easterseals-v2/
 - value (TEXT, JSON)
 - timestamp (DATETIME)
 
-## Next Steps
+## Deployment
 
-1. **Implement Session Setup Form**
-   - Create form fields for all session config options
-   - Add color picker inputs
-   - Add shape selector (dropdown or radio buttons)
-   - Validate inputs before submission
-   - Handle API errors gracefully
-
-2. **Build Active Session Interface**
-   - Render three buttons with custom styles
-   - Track clicks in Zustand store
-   - Send click events to API
-   - Display large point counter
-   - Handle session end (time or points limit)
-   - Show "session ended" message
-
-3. **Create Analytics Visualizations**
-   - Fetch session data from API
-   - Transform data for Recharts
-   - Create charts:
-     - Scatter plot: clicks over time by button
-     - Line chart: cumulative points
-     - Bar chart: click distribution
-   - Add filtering/date range selection
-   - Implement CSV export
-
-4. **Polish & Features**
-   - Add loading states
-   - Error boundaries
-   - Toast notifications
-   - Dark mode implementation
-   - Button click animations
-   - Session comparison view
+See `WARP.md` for deployment configuration.
+- Production: `https://es2.randall.codes`
+- Auto-deploys via GitHub Actions on merge to `main`
+- Process manager: pm2 (`es2-api`)
 
 ## Development Tips
 

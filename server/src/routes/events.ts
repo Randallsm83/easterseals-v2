@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { statements } from '../db/index.js';
+import { emit } from '../live/sessionEmitter.js';
 import { z } from 'zod';
 
 const router = Router();
@@ -41,6 +42,9 @@ router.post('/', (req, res) => {
       JSON.stringify(value),
       timestamp
     );
+
+    // Broadcast to any live SSE listeners
+    emit(sessionId, { type: event, sessionId, timestamp, data: value });
 
     res.status(201).json({ message: 'Event logged successfully' });
   } catch (error) {

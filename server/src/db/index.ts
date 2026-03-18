@@ -62,6 +62,13 @@ export function initializeDatabase() {
       participantId TEXT PRIMARY KEY,
       archivedAt DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS session_notes (
+      sessionId TEXT PRIMARY KEY,
+      notes TEXT NOT NULL DEFAULT '',
+      updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (sessionId) REFERENCES sessions(sessionId) ON DELETE CASCADE
+    );
   `);
 
   console.log('\u2713 Database tables created');
@@ -267,6 +274,17 @@ function createStatements() {
       SELECT COUNT(*) as count 
       FROM session_event_log 
       WHERE sessionId = ? AND event = ?
+    `),
+
+    // Session notes
+    getSessionNotes: db.prepare(`
+      SELECT * FROM session_notes WHERE sessionId = ?
+    `),
+
+    upsertSessionNotes: db.prepare(`
+      INSERT INTO session_notes (sessionId, notes, updatedAt)
+      VALUES (?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(sessionId) DO UPDATE SET notes = excluded.notes, updatedAt = CURRENT_TIMESTAMP
     `),
   };
 }
