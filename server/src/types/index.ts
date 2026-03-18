@@ -35,6 +35,8 @@ export const InputConfigSchema = z.object({
   // Physical-only
   inputCode: z.string().optional(),
   inputLabel: z.string().optional(),
+  // Physical-only: whether to show a visual indicator on screen when activated
+  showHighlight: z.boolean().optional(),
   // Reward settings
   isRewarded: z.boolean(),
   moneyAwarded: z.number().int().nonnegative(),
