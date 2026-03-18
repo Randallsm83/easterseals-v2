@@ -1,12 +1,13 @@
-import { useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useCallback, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { api } from '../lib/api';
 import { useInputCapture, type CapturedInput } from '../lib/useInputCapture';
-import type { BaseConfig, InputConfig, ButtonShape } from '../types';
+import type { BaseConfig, InputConfig, ButtonShape, RawStoredConfig } from '../types';
+import { normalizeConfig } from '../lib/normalizeConfig';
 
 // Dollar input helper — displays dollars, stores cents
 function DollarInput({
@@ -64,7 +65,10 @@ function ShapePreview({ shape, color, size = 32 }: { shape: ButtonShape; color: 
 
 export function ConfigurationSetup() {
   const navigate = useNavigate();
+  const { configId } = useParams<{ configId?: string }>();
+  const isEditMode = !!configId;
   const [loading, setLoading] = useState(false);
+  const [formReady, setFormReady] = useState(!isEditMode);
   const [error, setError] = useState<string | null>(null);
   const [configName, setConfigName] = useState('');
 
@@ -110,6 +114,23 @@ export function ConfigurationSetup() {
     ],
   });
 
+  useEffect(() => {
+    if (!isEditMode || !configId) return;
+    api.getConfiguration(configId)
+      .then((cfg) => {
+        const parsedConfig = typeof cfg.config === 'string' ? JSON.parse(cfg.config) : cfg.config;
+        const normalized = normalizeConfig(parsedConfig as RawStoredConfig);
+        setConfigName(cfg.name);
+        setFormData(normalized);
+        setFormReady(true);
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : 'Failed to load configuration');
+        setFormReady(true);
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Input capture state (for adding physical inputs)
   const [captureMode, setCaptureMode] = useState<'idle' | 'capturing' | 'rebinding'>('idle');
   const [rebindInputId, setRebindInputId] = useState<string | null>(null);
@@ -134,6 +155,7 @@ export function ConfigurationSetup() {
         type: captured.inputType,
         inputCode: captured.inputCode,
         inputLabel: captured.inputLabel,
+        showHighlight: true,
         isRewarded: false,
         moneyAwarded: 5,
         awardInterval: 10,
@@ -195,11 +217,15 @@ export function ConfigurationSetup() {
     setLoading(true);
 
     try {
-      const configId = `config-${Date.now()}`;
-      await api.createConfiguration({ configId, name: configName, config: formData });
-      navigate('/');
+      if (isEditMode && configId) {
+        await api.updateConfiguration(configId, { name: configName, config: formData });
+      } else {
+        const newConfigId = `config-${Date.now()}`;
+        await api.createConfiguration({ configId: newConfigId, name: configName, config: formData });
+      }
+      navigate('/configurations');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create configuration');
+      setError(err instanceof Error ? err.message : (isEditMode ? 'Failed to update configuration' : 'Failed to create configuration'));
     } finally {
       setLoading(false);
     }
@@ -208,11 +234,19 @@ export function ConfigurationSetup() {
   const screenInputs = formData.inputs.filter(i => i.type === 'screen');
   const physicalInputs = formData.inputs.filter(i => i.type !== 'screen');
 
+  if (!formReady) {
+    return (
+      <div className="flex items-center justify-center min-h-[40vh]">
+        <p className="text-muted-foreground">Loading configuration...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-4xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold">Create Configuration</h1>
-        <p className="text-muted-foreground mt-2">Create a reusable configuration template</p>
+        <h1 className="text-3xl font-bold">{isEditMode ? 'Edit Configuration' : 'Create Configuration'}</h1>
+        <p className="text-muted-foreground mt-2">{isEditMode ? 'Update this configuration template' : 'Create a reusable configuration template'}</p>
       </div>
 
       <form onSubmit={handleSubmit}>
@@ -397,14 +431,42 @@ export function ConfigurationSetup() {
 
           <div className="flex gap-4">
             <Button type="submit" size="lg" disabled={loading} className="flex-1">
-              {loading ? 'Creating...' : 'Create Configuration'}
+              {loading ? (isEditMode ? 'Saving...' : 'Creating...') : (isEditMode ? 'Save Changes' : 'Create Configuration')}
             </Button>
-            <Button type="button" variant="outline" size="lg" onClick={() => navigate('/')}>
+            <Button type="button" variant="outline" size="lg" onClick={() => navigate('/configurations')}>
               Cancel
             </Button>
           </div>
         </div>
       </form>
+    </div>
+  );
+}
+
+// --- Color swatch picker ---
+
+const SWATCH_PALETTE = [
+  '#5ccc96', '#e39400', '#00a3cc', '#b3a1e6',
+  '#ce6f8f', '#42b3c2', '#f2ce00', '#c678dd',
+  '#98c379', '#61afef', '#e06c75', '#56b6c2',
+  '#404040', '#e0e0e0', '#ffffff', '#000000',
+];
+
+function ColorSwatchPicker({ value, onChange }: { value: string; onChange: (color: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {SWATCH_PALETTE.map((color) => (
+        <button
+          key={color}
+          type="button"
+          title={color}
+          onClick={() => onChange(color)}
+          className={`w-6 h-6 rounded border-2 transition-transform hover:scale-110 ${
+            value === color ? 'border-primary scale-110' : 'border-transparent hover:border-muted-foreground'
+          }`}
+          style={{ backgroundColor: color }}
+        />
+      ))}
     </div>
   );
 }
@@ -450,13 +512,20 @@ function InputCard({ input, isExpanded, onToggleExpand, onUpdate, onRemove, onRe
           {input.name || <span className="text-muted-foreground italic">Unnamed</span>}
         </span>
 
-        {/* Type badge */}
-        <span className="text-xs bg-muted px-2 py-0.5 rounded shrink-0">{typeBadge}</span>
-
         {/* Rewarded indicator */}
         {input.isRewarded && (
           <span className="text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded-full font-medium shrink-0">
             Rewarded
+          </span>
+        )}
+
+        {/* Type badge */}
+        <span className="text-xs bg-muted px-2 py-0.5 rounded shrink-0">{typeBadge}</span>
+
+        {/* No-highlight badge */}
+        {!isScreen && input.showHighlight === false && (
+          <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded shrink-0">
+            No highlight
           </span>
         )}
 
@@ -535,23 +604,44 @@ function InputCard({ input, isExpanded, onToggleExpand, onUpdate, onRemove, onRe
             </div>
           )}
 
-          {/* Physical-specific: binding + re-bind */}
+          {/* Physical-specific: binding + re-bind + highlight toggle */}
           {!isScreen && (
-            <div className="flex items-center gap-3">
-              <div className="space-y-1 flex-1">
-                <Label className="text-xs">Binding</Label>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-mono bg-muted px-3 py-1.5 rounded">
-                    {input.inputLabel ?? 'Unknown'}
-                  </span>
-                  <span className="text-xs text-muted-foreground">({input.type})</span>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="space-y-1 flex-1">
+                  <Label className="text-xs">Binding</Label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-mono bg-muted px-3 py-1.5 rounded">
+                      {input.inputLabel ?? 'Unknown'}
+                    </span>
+                    <span className="text-xs text-muted-foreground">({input.type})</span>
+                  </div>
                 </div>
+                {onRebind && (
+                  <Button type="button" variant="outline" size="sm" onClick={onRebind} className="h-8 text-xs">
+                    Re-bind
+                  </Button>
+                )}
               </div>
-              {onRebind && (
-                <Button type="button" variant="outline" size="sm" onClick={onRebind} className="h-8 text-xs">
-                  Re-bind
-                </Button>
-              )}
+              <div className="space-y-1">
+                <Label className="text-xs">Color (for charts)</Label>
+                <ColorSwatchPicker
+                  value={input.color ?? '#b3a1e6'}
+                  onChange={(color) => onUpdate({ color })}
+                />
+              </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id={`${input.id}-highlight`}
+                  checked={input.showHighlight !== false}
+                  onChange={(e) => onUpdate({ showHighlight: e.target.checked })}
+                  className="h-4 w-4 rounded border-border"
+                />
+                <Label htmlFor={`${input.id}-highlight`} className="cursor-pointer text-sm">
+                  Show screen highlight when activated
+                </Label>
+              </div>
             </div>
           )}
 
