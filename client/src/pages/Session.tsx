@@ -279,6 +279,8 @@ export function Session() {
 
   const isDisabled = !sessionActive && !(config.continueAfterMoneyLimit && moneyLimitReached);
   const screenInputs = config.inputs.filter(i => i.type === 'screen' && i.shape !== 'none');
+  // Only show status pills for physical inputs that have screen highlight enabled
+  const highlightedPhysicalInputs = physicalInputs.filter(i => i.showHighlight !== false);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-20">
@@ -311,9 +313,9 @@ export function Session() {
       </div>
 
       {/* Physical Input Status */}
-      {physicalInputs.length > 0 && (
+      {highlightedPhysicalInputs.length > 0 && (
         <div className="flex flex-wrap items-center justify-center gap-3">
-          {physicalInputs.map((input) => (
+          {highlightedPhysicalInputs.map((input) => (
             <div
               key={input.id}
               className={cn(

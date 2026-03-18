@@ -33,6 +33,9 @@ export interface InputConfig {
   // Physical-only
   inputCode?: string;
   inputLabel?: string;
+  // Physical-only: whether to show a visual indicator on screen when activated
+  // Defaults to true if omitted (backward compatible)
+  showHighlight?: boolean;
   // Reward settings (per-input)
   isRewarded: boolean;
   moneyAwarded: number;    // cents
@@ -197,12 +200,20 @@ export interface SessionStats {
 export interface ChartDataPoint {
   timeElapsed: number;
   timestamp: string;
-  left: number;
-  middle: number;
-  right: number;
+  left: number;    // legacy 3-button model
+  middle: number;  // legacy 3-button model
+  right: number;   // legacy 3-button model
   total: number;
   money: number;
   buttonClicked: ButtonPosition;
+  inputId?: string;                       // new unified input model
+  inputCounts?: Record<string, number>;   // new model: per-inputId cumulative count snapshot
+}
+
+export interface SessionNotes {
+  sessionId: string;
+  notes: string;
+  updatedAt: string | null;
 }
 
 // Participant type for cascading dropdowns

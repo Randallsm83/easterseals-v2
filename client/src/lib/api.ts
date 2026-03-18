@@ -1,4 +1,4 @@
-import type { BaseConfig, Configuration, SessionDataResponse, SessionListItem, Participant } from '../types';
+import type { BaseConfig, Configuration, SessionDataResponse, SessionListItem, Participant, SessionNotes } from '../types';
 
 // In production, use same-origin /api; in dev, use localhost:3000
 const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:3000/api');
@@ -149,6 +149,17 @@ class ApiClient {
 
   async getNextSessionId(participantId: string): Promise<{ nextSessionId: string }> {
     return this.request<{ nextSessionId: string }>(`/participants/${participantId}/next-session-id`);
+  }
+
+  async getSessionNotes(sessionId: string): Promise<SessionNotes> {
+    return this.request<SessionNotes>(`/sessions/${sessionId}/notes`);
+  }
+
+  async updateSessionNotes(sessionId: string, notes: string): Promise<{ message: string; sessionId: string }> {
+    return this.request(`/sessions/${sessionId}/notes`, {
+      method: 'PUT',
+      body: JSON.stringify({ notes }),
+    });
   }
 }
 
