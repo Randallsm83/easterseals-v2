@@ -179,6 +179,9 @@ export function StartSession() {
                   <Link to={`/session/${startedSessionId}`} className="flex-1">
                     <Button className="w-full" size="lg">Start Session →</Button>
                   </Link>
+                  <Link to={`/monitor/${startedSessionId}`} target="_blank" rel="noopener noreferrer">
+                    <Button type="button" variant="outline" size="lg">Open Monitor</Button>
+                  </Link>
                 </div>
                 <div className="rounded-lg bg-background border border-border p-3 space-y-1">
                   <p className="text-xs text-muted-foreground">Session ID — enter this on the Monitor page from another device:</p>
