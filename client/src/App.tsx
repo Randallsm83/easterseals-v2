@@ -52,6 +52,12 @@ function App() {
                 >
                   Compare
                 </Link>
+                <Link
+                  to="/monitor"
+                  className="text-sm font-medium hover:underline"
+                >
+                  Monitor
+                </Link>
               </div>
               <button
                 onClick={toggleTheme}
