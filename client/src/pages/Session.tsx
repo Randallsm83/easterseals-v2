@@ -279,8 +279,6 @@ export function Session() {
 
   const isDisabled = !sessionActive && !(config.continueAfterMoneyLimit && moneyLimitReached);
   const screenInputs = config.inputs.filter(i => i.type === 'screen' && i.shape !== 'none');
-  // Only show status pills for physical inputs that have screen highlight enabled
-  const highlightedPhysicalInputs = physicalInputs.filter(i => i.showHighlight !== false);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-20">
@@ -311,28 +309,6 @@ export function Session() {
           </button>
         ))}
       </div>
-
-      {/* Physical Input Status */}
-      {highlightedPhysicalInputs.length > 0 && (
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          {highlightedPhysicalInputs.map((input) => (
-            <div
-              key={input.id}
-              className={cn(
-                'px-4 py-2 rounded-lg border text-sm transition-all',
-                lastActivatedInput === input.id
-                  ? 'bg-primary/20 border-primary scale-105'
-                  : 'bg-muted/30 border-border'
-              )}
-            >
-              <span className="font-medium">{input.name || input.inputLabel}</span>
-              <span className="text-muted-foreground ml-2">
-                {inputClickCounts[input.id] ?? 0}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* Session Message */}
       {sessionMessage && (
