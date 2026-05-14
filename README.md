@@ -7,8 +7,10 @@ A modern behavioral research tracking application for studying button-click patt
 - 🎯 **Session Configuration**: Customizable buttons, rewards, and session limits
 - 📊 **Enhanced Visualizations**: Interactive charts with real-time updates
 - 🔄 **Live Monitoring**: Watch sessions as they happen
-- 📈 **Analytics Dashboard**: Aggregate statistics across sessions
+- 📈 **Analytics Dashboard**: Aggregate statistics across sessions, with end-reason indicator
 - 📤 **Data Export**: Export to CSV/JSON for external analysis
+- ⏸️ **Periodic Pauses**: Configurable mid-session pauses with auto- or manual-resume
+- 🙈 **Participant Display Control**: Optionally hide the money counter from the participant
 - 🌓 **Dark Mode**: Built-in theme support
 - 📱 **Responsive**: Mobile-first design
 

@@ -27,7 +27,13 @@
 - **Light/Dark mode toggle** — persisted to localStorage
 - **Live session monitoring** — researcher watches session in real time from a separate device via SSE
 - **Session comparison** — side-by-side stats and timelines for up to 5 sessions
-- **Input color swatches** — 16-color preset palette for physical inputs
+- **Input color swatches** —  16-color preset palette for physical inputs
+- **End session at money limit** — explicit "End session when money limit is reached" toggle in the configurator
+- **Hide money from participant** — `showMoneyToParticipant` setting hides the money counter on the session screen (researcher still sees it in the live monitor)
+- **Configurable mid-session pauses** — pause after N rewarded or any responses for a fixed duration; auto-resume or manual resume (any input or a specific bound input). Session time limit is paused too so charts aren't skewed.
+- **Pause/resume events** — logged via `api.logEvent` and streamed over SSE
+- **End Reason in Analytics** — Session Overview tile shows *Time Limit* / *Money Limit* / *Manual* / *In Progress*
+- **Participant & Pause options in Analytics** — Configuration card shows the new options (money display, pauses on/off, pause schedule, resume mode)
 
 ### 🎯 Possible Future Enhancements
 
@@ -121,7 +127,7 @@ easterseals-v2/
 - `GET /api/sessions/:sessionId/stream` - SSE stream for live monitoring
 
 ### Events
-- `POST /api/events` - Log a session event (start/click/end)
+- `POST /api/events` - Log a session event (`start` | `click` | `end` | `pause` | `resume`)
 - `GET /api/events/:sessionId` - Get events for a session
 
 ### Configurations
@@ -147,7 +153,7 @@ easterseals-v2/
 ### session_event_log
 - id (INTEGER, PRIMARY KEY AUTOINCREMENT)
 - sessionId (TEXT, FOREIGN KEY)
-- event (TEXT: 'start', 'click', 'end')
+- event (TEXT: 'start', 'click', 'end', 'pause', 'resume')
 - value (TEXT, JSON)
 - timestamp (DATETIME)
 
