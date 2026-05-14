@@ -6,7 +6,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { api } from '../lib/api';
 import { useInputCapture, type CapturedInput } from '../lib/useInputCapture';
-import type { BaseConfig, InputConfig, ButtonShape, RawStoredConfig } from '../types';
+import type { BaseConfig, InputConfig, ButtonShape, RawStoredConfig, PauseTrigger, PauseResumeMode, PauseResumeBinding } from '../types';
 import { normalizeConfig } from '../lib/normalizeConfig';
 
 // Dollar input helper — displays dollars, stores cents
@@ -77,6 +77,13 @@ export function ConfigurationSetup() {
     moneyLimit: 1000000, // $10,000 default
     startingMoney: 0,
     continueAfterMoneyLimit: true,
+    showMoneyToParticipant: true,
+    pauseEnabled: false,
+    pauseTrigger: 'rewarded',
+    pauseAfterResponses: 5,
+    pauseDurationSeconds: 15,
+    pauseResumeMode: 'auto',
+    pauseResumeBinding: { type: 'any' },
     inputs: [
       {
         id: `screen-${Date.now()}-1`,
@@ -303,15 +310,163 @@ export function ConfigurationSetup() {
               <div className="flex items-center space-x-2">
                 <input
                   type="checkbox"
-                  id="continueAfterMoneyLimit"
-                  checked={formData.continueAfterMoneyLimit}
-                  onChange={(e) => setFormData({ ...formData, continueAfterMoneyLimit: e.target.checked })}
+                  id="endOnMoneyLimit"
+                  checked={!formData.continueAfterMoneyLimit}
+                  onChange={(e) => setFormData({ ...formData, continueAfterMoneyLimit: !e.target.checked })}
                   className="h-4 w-4 rounded border-border"
                 />
-                <Label htmlFor="continueAfterMoneyLimit" className="cursor-pointer">
-                  Continue session after money limit reached
+                <Label htmlFor="endOnMoneyLimit" className="cursor-pointer">
+                  End session when money limit is reached
                 </Label>
               </div>
+              <p className="text-xs text-muted-foreground pl-6">
+                When enabled, the session ends automatically as soon as the participant
+                reaches the money limit above.
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Section 1b: Participant Display & Pauses */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Participant Display &amp; Pauses</CardTitle>
+              <CardDescription>Control what the participant sees and add periodic breaks</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Show money to participant */}
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="showMoneyToParticipant"
+                  checked={formData.showMoneyToParticipant !== false}
+                  onChange={(e) => setFormData({ ...formData, showMoneyToParticipant: e.target.checked })}
+                  className="h-4 w-4 rounded border-border"
+                />
+                <Label htmlFor="showMoneyToParticipant" className="cursor-pointer">
+                  Show money earned to participant
+                </Label>
+              </div>
+              <p className="text-xs text-muted-foreground pl-6">
+                When disabled, the money counter is hidden from the participant
+                (still visible to the researcher in the live monitor).
+              </p>
+
+              {/* Pause toggle */}
+              <div className="pt-3 border-t flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="pauseEnabled"
+                  checked={!!formData.pauseEnabled}
+                  onChange={(e) => setFormData({ ...formData, pauseEnabled: e.target.checked })}
+                  className="h-4 w-4 rounded border-border"
+                />
+                <Label htmlFor="pauseEnabled" className="cursor-pointer font-medium">
+                  Pause session periodically
+                </Label>
+              </div>
+
+              {formData.pauseEnabled && (
+                <div className="pl-6 space-y-4 border-l-2 border-primary/30">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="pauseAfterResponses">Pause after every N responses</Label>
+                      <Input
+                        id="pauseAfterResponses"
+                        type="number"
+                        min="1"
+                        value={formData.pauseAfterResponses ?? 5}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            pauseAfterResponses: Math.max(1, parseInt(e.target.value) || 1),
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="pauseDurationSeconds">Pause duration (seconds)</Label>
+                      <Input
+                        id="pauseDurationSeconds"
+                        type="number"
+                        min="1"
+                        value={formData.pauseDurationSeconds ?? 15}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            pauseDurationSeconds: Math.max(1, parseInt(e.target.value) || 1),
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  {/* Trigger radio */}
+                  <div className="space-y-2">
+                    <Label className="text-sm">Count which responses?</Label>
+                    <div className="space-y-1">
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="pauseTrigger"
+                          value="rewarded"
+                          checked={(formData.pauseTrigger ?? 'rewarded') === 'rewarded'}
+                          onChange={() => setFormData({ ...formData, pauseTrigger: 'rewarded' as PauseTrigger })}
+                          className="h-4 w-4"
+                        />
+                        <span className="text-sm">Only rewarded responses</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="pauseTrigger"
+                          value="any"
+                          checked={formData.pauseTrigger === 'any'}
+                          onChange={() => setFormData({ ...formData, pauseTrigger: 'any' as PauseTrigger })}
+                          className="h-4 w-4"
+                        />
+                        <span className="text-sm">Any response</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Resume mode radio */}
+                  <div className="space-y-2">
+                    <Label className="text-sm">When the pause ends</Label>
+                    <div className="space-y-1">
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="pauseResumeMode"
+                          value="auto"
+                          checked={(formData.pauseResumeMode ?? 'auto') === 'auto'}
+                          onChange={() => setFormData({ ...formData, pauseResumeMode: 'auto' as PauseResumeMode })}
+                          className="h-4 w-4"
+                        />
+                        <span className="text-sm">Auto-resume after duration</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="pauseResumeMode"
+                          value="manual"
+                          checked={formData.pauseResumeMode === 'manual'}
+                          onChange={() => setFormData({ ...formData, pauseResumeMode: 'manual' as PauseResumeMode })}
+                          className="h-4 w-4"
+                        />
+                        <span className="text-sm">Manual resume (researcher presses a button/key)</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Resume binding (manual only) */}
+                  {formData.pauseResumeMode === 'manual' && (
+                    <PauseResumeBindingEditor
+                      binding={formData.pauseResumeBinding ?? { type: 'any' }}
+                      onChange={(binding) => setFormData({ ...formData, pauseResumeBinding: binding })}
+                    />
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -439,6 +594,96 @@ export function ConfigurationSetup() {
           </div>
         </div>
       </form>
+    </div>
+  );
+}
+
+// --- Pause resume binding editor ---
+
+function PauseResumeBindingEditor({
+  binding,
+  onChange,
+}: {
+  binding: PauseResumeBinding;
+  onChange: (binding: PauseResumeBinding) => void;
+}) {
+  const [capturing, setCapturing] = useState(false);
+
+  const handleCapture = useCallback(
+    (captured: CapturedInput) => {
+      onChange({
+        type: captured.inputType,
+        inputCode: captured.inputCode,
+        inputLabel: captured.inputLabel,
+      });
+      setCapturing(false);
+    },
+    [onChange]
+  );
+
+  useInputCapture({ active: capturing, onCapture: handleCapture });
+
+  return (
+    <div className="space-y-2">
+      <Label className="text-sm">Resume input</Label>
+      <div className="space-y-1">
+        <label className="flex items-center space-x-2 cursor-pointer">
+          <input
+            type="radio"
+            name="pauseResumeBindingType"
+            checked={binding.type === 'any'}
+            onChange={() => onChange({ type: 'any' })}
+            className="h-4 w-4"
+          />
+          <span className="text-sm">Any input resumes (any key or gamepad press)</span>
+        </label>
+        <label className="flex items-center space-x-2 cursor-pointer">
+          <input
+            type="radio"
+            name="pauseResumeBindingType"
+            checked={binding.type !== 'any'}
+            onChange={() => {
+              // If switching to specific without one yet, prompt capture
+              if (binding.type === 'any') setCapturing(true);
+            }}
+            className="h-4 w-4"
+          />
+          <span className="text-sm">A specific input resumes</span>
+        </label>
+      </div>
+
+      {binding.type !== 'any' && (
+        <div className="pl-6 flex items-center gap-2">
+          <span className="text-sm font-mono bg-muted px-2 py-1 rounded">
+            {binding.inputLabel ?? 'Unset'}
+          </span>
+          <span className="text-xs text-muted-foreground">({binding.type})</span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setCapturing(true)}
+            className="h-7 text-xs"
+          >
+            {binding.inputCode ? 'Re-bind' : 'Bind'}
+          </Button>
+        </div>
+      )}
+
+      {capturing && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center">
+          <div className="bg-card border rounded-lg p-8 text-center space-y-4 max-w-md">
+            <div className="text-4xl">⏸️</div>
+            <h3 className="text-lg font-semibold">Bind Resume Input</h3>
+            <p className="text-muted-foreground">
+              Press a key, push a button, or move a joystick to bind it as the resume input...
+            </p>
+            <Button type="button" variant="outline" onClick={() => setCapturing(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

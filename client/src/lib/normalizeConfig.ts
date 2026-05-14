@@ -61,6 +61,14 @@ function convertLegacyConfig(raw: RawStoredConfig): BaseConfig {
     startingMoney: raw.startingMoney ?? 0,
     continueAfterMoneyLimit: raw.continueAfterMoneyLimit ?? true,
     inputs,
+    // Legacy configs predate these options; apply safe defaults.
+    showMoneyToParticipant: raw.showMoneyToParticipant ?? true,
+    pauseEnabled: raw.pauseEnabled ?? false,
+    pauseTrigger: raw.pauseTrigger,
+    pauseAfterResponses: raw.pauseAfterResponses,
+    pauseDurationSeconds: raw.pauseDurationSeconds,
+    pauseResumeMode: raw.pauseResumeMode,
+    pauseResumeBinding: raw.pauseResumeBinding,
   };
 }
 
@@ -79,6 +87,13 @@ export function normalizeConfig(raw: RawStoredConfig): BaseConfig {
     startingMoney: raw.startingMoney ?? 0,
     continueAfterMoneyLimit: raw.continueAfterMoneyLimit ?? true,
     inputs: raw.inputs ?? [],
+    showMoneyToParticipant: raw.showMoneyToParticipant ?? true,
+    pauseEnabled: raw.pauseEnabled ?? false,
+    pauseTrigger: raw.pauseTrigger,
+    pauseAfterResponses: raw.pauseAfterResponses,
+    pauseDurationSeconds: raw.pauseDurationSeconds,
+    pauseResumeMode: raw.pauseResumeMode,
+    pauseResumeBinding: raw.pauseResumeBinding,
   };
 }
 

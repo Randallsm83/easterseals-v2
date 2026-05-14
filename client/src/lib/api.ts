@@ -112,7 +112,7 @@ class ApiClient {
   // Events
   async logEvent(data: {
     sessionId: string;
-    event: 'start' | 'end' | 'click';
+    event: 'start' | 'end' | 'click' | 'pause' | 'resume';
     value: unknown;
     timestamp?: string;
   }): Promise<{ message: string }> {

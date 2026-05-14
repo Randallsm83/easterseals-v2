@@ -41,12 +41,18 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       inputClickCounts[input.id] = 0;
       inputIntervalCounters[input.id] = 0;
     }
+    // Reset all session-scoped flags, otherwise state from a previous session in
+    // the same browser tab (e.g. moneyLimitReached) leaks into the new session and
+    // short-circuits the reward branch.
     set({
       config,
       moneyCounter: config.startingMoney,
       totalClicks: 0,
       inputClickCounts,
       inputIntervalCounters,
+      moneyLimitReached: false,
+      timeLimitReached: false,
+      sessionActive: false,
     });
   },
 

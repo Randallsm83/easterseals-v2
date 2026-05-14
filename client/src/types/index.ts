@@ -43,6 +43,17 @@ export interface InputConfig {
   playAwardSound: boolean;
 }
 
+// Pause/resume configuration
+export type PauseTrigger = 'any' | 'rewarded';
+export type PauseResumeMode = 'auto' | 'manual';
+export type PauseResumeBindingType = 'any' | 'keyboard' | 'gamepad_button' | 'gamepad_axis';
+
+export interface PauseResumeBinding {
+  type: PauseResumeBindingType;
+  inputCode?: string;
+  inputLabel?: string;
+}
+
 // New base configuration with unified input model
 export interface BaseConfig {
   timeLimit: number;
@@ -50,6 +61,15 @@ export interface BaseConfig {
   startingMoney: number;        // cents
   continueAfterMoneyLimit: boolean;
   inputs: InputConfig[];
+  // Display: hide the money counter from the participant when false. Default true.
+  showMoneyToParticipant?: boolean;
+  // Pause behavior
+  pauseEnabled?: boolean;
+  pauseTrigger?: PauseTrigger;             // 'rewarded' = only rewarded responses count
+  pauseAfterResponses?: number;            // pause after this many qualifying responses
+  pauseDurationSeconds?: number;           // duration of each pause (auto mode)
+  pauseResumeMode?: PauseResumeMode;       // 'auto' resumes after duration; 'manual' waits for input
+  pauseResumeBinding?: PauseResumeBinding; // only for manual: 'any' to accept any input, else specific
 }
 
 // Legacy base config (for backward compatibility with old stored data)
@@ -86,6 +106,13 @@ export interface SessionConfig {
   startingMoney: number;
   continueAfterMoneyLimit: boolean;
   inputs: InputConfig[];
+  showMoneyToParticipant?: boolean;
+  pauseEnabled?: boolean;
+  pauseTrigger?: PauseTrigger;
+  pauseAfterResponses?: number;
+  pauseDurationSeconds?: number;
+  pauseResumeMode?: PauseResumeMode;
+  pauseResumeBinding?: PauseResumeBinding;
 }
 
 // Raw config as stored in DB — could be old or new format

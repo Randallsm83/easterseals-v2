@@ -8,7 +8,7 @@ const router = Router();
 // Log event schema
 const LogEventSchema = z.object({
   sessionId: z.string(),
-  event: z.enum(['start', 'end', 'click']),
+  event: z.enum(['start', 'end', 'click', 'pause', 'resume']),
   value: z.record(z.any()),
   timestamp: z.string().datetime().optional(),
 });
