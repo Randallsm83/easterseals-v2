@@ -62,7 +62,11 @@ npm workspaces with `client/` (React SPA) and `server/` (Express API). In produc
 
 **SSE stream** (`GET /api/sessions/:sessionId/stream`): sends an initial snapshot of existing events on connect, then streams live events via `sessionEmitter`. Heartbeat every 25s. Header `X-Accel-Buffering: no` disables nginx buffering.
 
+**Event types**: `start`, `click`, `end`, `pause`, `resume`. The `LogEventSchema` in `routes/events.ts` and the `LiveEvent.type` union in `live/sessionEmitter.ts` must stay in sync when adding new event kinds.
+
 **Event log shape**: events stored as JSON strings in `session_event_log.value`. Click events have two legacy formats + the current format; `normalizeClickValue()` in `sessions.ts` handles all three.
+
+**End event includes** `timeLimitReached` and `moneyLimitReached` booleans — the Analytics "End Reason" tile reads these to display *Time Limit* / *Money Limit* / *Manual* / *In Progress*.
 
 ### Client (`client/src/`)
 
@@ -81,6 +85,23 @@ Two config formats coexist due to legacy data migration:
 - **Current** (`BaseConfig`): unified `inputs: InputConfig[]` where each input has its own reward settings and `type: 'screen' | 'keyboard' | 'gamepad_button' | 'gamepad_axis'`
 
 `normalizeConfig()` on the client and `normalizeClickValue()` on the server bridge old and new formats. New features should only use the current `BaseConfig`/`InputConfig` model.
+
+**Optional participant/pause fields on `BaseConfig`** (all default to safe values via `normalizeConfig`):
+- `showMoneyToParticipant?: boolean` — default `true`. Hides the money counter from the participant on the session screen when `false`.
+- `pauseEnabled?: boolean` — enables mid-session pauses.
+- `pauseTrigger?: 'any' | 'rewarded'` — default `'rewarded'`. Counts only rewarded responses or any response toward the pause threshold.
+- `pauseAfterResponses?: number` — number of qualifying responses between pauses.
+- `pauseDurationSeconds?: number` — length of each pause.
+- `pauseResumeMode?: 'auto' | 'manual'` — default `'auto'`.
+- `pauseResumeBinding?: { type: 'any' | 'keyboard' | 'gamepad_button' | 'gamepad_axis'; inputCode?: string; inputLabel?: string }` — for manual mode, choose any input or bind a specific key / gamepad button / axis.
+
+While paused, `Session.tsx` clears the time-limit `setTimeout` and snapshots remaining ms; on resume the timer is rescheduled with the remaining ms so the session time limit pauses with the participant. Pause/resume are also logged as `pause` and `resume` events.
+
+### State Reset Across Sessions
+The Zustand store in `client/src/stores/useSessionStore.ts` resets *all* session-scoped flags (`moneyLimitReached`, `timeLimitReached`, `sessionActive`, plus per-input counters) inside `setConfig`. This must stay in place — without it, a flag from a previously completed session in the same browser tab will leak into the next session and prevent rewards from firing.
+
+### Logging end events
+`handleMoneyLimitEnd` and `handleTimeLimitEnd` in `Session.tsx` read the final state from `useSessionStore.getState()` (not the React closure) when emitting the `end` event — the awarding click that hits the money limit mutates the store synchronously but React closure values are still stale at that point.
 
 ### Deployment
 
