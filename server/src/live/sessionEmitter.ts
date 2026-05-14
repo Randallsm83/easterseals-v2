@@ -1,5 +1,5 @@
 export interface LiveEvent {
-  type: 'click' | 'start' | 'end' | 'heartbeat';
+  type: 'click' | 'start' | 'end' | 'heartbeat' | 'pause' | 'resume';
   sessionId: string;
   timestamp: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

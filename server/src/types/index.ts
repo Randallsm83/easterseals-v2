@@ -44,6 +44,17 @@ export const InputConfigSchema = z.object({
   playAwardSound: z.boolean(),
 });
 
+// Pause/resume configuration
+export const PauseTriggerSchema = z.enum(['any', 'rewarded']);
+export const PauseResumeModeSchema = z.enum(['auto', 'manual']);
+export const PauseResumeBindingTypeSchema = z.enum(['any', 'keyboard', 'gamepad_button', 'gamepad_axis']);
+
+export const PauseResumeBindingSchema = z.object({
+  type: PauseResumeBindingTypeSchema,
+  inputCode: z.string().optional(),
+  inputLabel: z.string().optional(),
+});
+
 // New session config schema (unified input model)
 export const SessionConfigSchema = z.object({
   timeLimit: z.number().int().positive(),
@@ -51,6 +62,14 @@ export const SessionConfigSchema = z.object({
   startingMoney: z.number().int().nonnegative(),
   continueAfterMoneyLimit: z.boolean(),
   inputs: z.array(InputConfigSchema),
+  // New optional participant/pause options
+  showMoneyToParticipant: z.boolean().optional(),
+  pauseEnabled: z.boolean().optional(),
+  pauseTrigger: PauseTriggerSchema.optional(),
+  pauseAfterResponses: z.number().int().positive().optional(),
+  pauseDurationSeconds: z.number().int().positive().optional(),
+  pauseResumeMode: PauseResumeModeSchema.optional(),
+  pauseResumeBinding: PauseResumeBindingSchema.optional(),
 });
 
 // Legacy session config schema (old format — still accepted on read)
@@ -123,6 +142,10 @@ export type InputType = z.infer<typeof InputTypeSchema>;
 export type ButtonConfig = z.infer<typeof ButtonConfigSchema>;
 export type ExternalInputConfig = z.infer<typeof ExternalInputConfigSchema>;
 export type InputConfig = z.infer<typeof InputConfigSchema>;
+export type PauseTrigger = z.infer<typeof PauseTriggerSchema>;
+export type PauseResumeMode = z.infer<typeof PauseResumeModeSchema>;
+export type PauseResumeBindingType = z.infer<typeof PauseResumeBindingTypeSchema>;
+export type PauseResumeBinding = z.infer<typeof PauseResumeBindingSchema>;
 export type SessionConfig = z.infer<typeof SessionConfigSchema>;
 export type LegacySessionConfig = z.infer<typeof LegacySessionConfigSchema>;
 export type ClickEvent = z.infer<typeof ClickEventSchema>;

@@ -310,6 +310,20 @@ export function Analytics() {
       finalMoney = chartData[chartData.length - 1].money;
     }
 
+    // Determine the reason the session ended (or report that it's still running).
+    let endReason: string;
+    if (!sessionData.endEvent) {
+      endReason = 'In Progress';
+    } else {
+      const v = sessionData.endEvent.value as {
+        timeLimitReached?: boolean;
+        moneyLimitReached?: boolean;
+      } | undefined;
+      if (v?.timeLimitReached) endReason = 'Time Limit';
+      else if (v?.moneyLimitReached) endReason = 'Money Limit';
+      else endReason = 'Manual';
+    }
+
     return {
       duration,
       totalClicks,
@@ -318,6 +332,7 @@ export function Analytics() {
       accuracy: calculateAccuracy(correctClicks, totalClicks),
       clickRate: calculateClickRate(totalClicks, duration),
       finalMoney: finalMoney ?? 0,
+      endReason,
     };
   }, [sessionData, chartData]);
 
@@ -515,7 +530,11 @@ export function Analytics() {
         <>
           <div className="grid gap-6 lg:grid-cols-2">
             <Card className="bg-gradient-to-br from-card to-card/80">
-              <CardHeader className="pb-4">
+              {/* Fixed header height so the content rows (and the colored End Reason
+                  band) align with the Configuration card next to it. The text content
+                  of CardDescription differs between the two cards and would otherwise
+                  produce slight sub-pixel height differences. */}
+              <CardHeader className="pb-4 h-[100px]">
                 <CardTitle className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-primary"></span>
                   Session Overview
@@ -527,49 +546,55 @@ export function Analytics() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="rounded-lg border border-border/50 p-4 text-center">
-                    <div className="text-xl font-mono font-bold">
+                {/* Row 1 uses identical p-3 + text-lg sizing to Configuration's row 1 so the
+                    colored row below (End Reason) aligns with Rewarded Input across cards. */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg border border-border/50 p-3 text-center">
+                    <div className="text-lg font-mono font-bold">
                       {sessionData.startEvent ? parseSqliteDate(sessionData.startEvent.timestamp).toLocaleTimeString('en-US', { hour12: false }) : 'N/A'}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">Start Time</div>
                   </div>
-                  <div className="rounded-lg border border-border/50 p-4 text-center">
-                    <div className="text-xl font-mono font-bold">
+                  <div className="rounded-lg border border-border/50 p-3 text-center">
+                    <div className="text-lg font-mono font-bold">
                       {sessionData.endEvent ? parseSqliteDate(sessionData.endEvent.timestamp).toLocaleTimeString('en-US', { hour12: false }) : 'In Progress'}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">End Time</div>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="rounded-lg bg-primary/10 border border-primary/20 p-4 text-center">
-                    <div className="text-3xl font-bold text-primary">{formatDuration(stats.duration)}</div>
-                    <div className="text-xs text-muted-foreground mt-1">Duration</div>
-                  </div>
-                  <div className="rounded-lg bg-accent/10 border border-accent/20 p-4 text-center">
-                    <div className="text-3xl font-bold text-accent">{formatMoney(stats.finalMoney)}</div>
-                    <div className="text-xs text-muted-foreground mt-1">Money Earned</div>
-                  </div>
+                <div className="rounded-lg bg-primary/10 border border-primary/20 p-4 text-center">
+                  <div className="text-lg font-bold text-primary">{stats.endReason}</div>
+                  <div className="text-xs text-muted-foreground mt-1">End Reason</div>
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                   <div className="text-center p-3 rounded-lg border border-border/50 bg-muted/30">
-                    <div className="text-2xl font-bold">{stats.totalClicks}</div>
-                    <div className="text-xs text-muted-foreground">Total Clicks</div>
+                    <div className="text-xl font-bold">{stats.totalClicks}</div>
+                    <div className="text-xs text-muted-foreground mt-1">Total Clicks</div>
                   </div>
                   <div className="text-center p-3 rounded-lg border border-border/50 bg-muted/30">
-                    <div className="text-2xl font-bold">{stats.accuracy}%</div>
-                    <div className="text-xs text-muted-foreground">Accuracy</div>
+                    <div className="text-xl font-bold">{stats.accuracy}%</div>
+                    <div className="text-xs text-muted-foreground mt-1">Accuracy</div>
                   </div>
                   <div className="text-center p-3 rounded-lg border border-border/50 bg-muted/30">
-                    <div className="text-2xl font-bold">{stats.clickRate}/s</div>
-                    <div className="text-xs text-muted-foreground">Click Rate</div>
+                    <div className="text-xl font-bold">{stats.clickRate}/s</div>
+                    <div className="text-xs text-muted-foreground mt-1">Click Rate</div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
+                    <div className="text-xl font-bold">{formatDuration(stats.duration)}</div>
+                    <div className="text-xs text-muted-foreground mt-1">Duration</div>
+                  </div>
+                  <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
+                    <div className="text-xl font-bold">{formatMoney(stats.finalMoney)}</div>
+                    <div className="text-xs text-muted-foreground mt-1">Money Earned</div>
                   </div>
                 </div>
               </CardContent>
             </Card>
 
             <Card className="bg-gradient-to-br from-card to-card/80">
-              <CardHeader className="pb-4">
+              <CardHeader className="pb-4 h-[100px]">
                 <CardTitle className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-accent"></span>
                   Configuration
@@ -638,6 +663,55 @@ export function Analytics() {
                           <div className="text-xl font-bold">{formatMoney(normalized.startingMoney ?? 0)}</div>
                           <div className="text-xs text-muted-foreground mt-1">Starting Money</div>
                         </div>
+                      </div>
+                      <div className="grid grid-cols-4 gap-3">
+                        <div className="rounded-lg border border-border/50 p-3 text-center">
+                          <div className="text-lg font-bold">
+                            {normalized.showMoneyToParticipant === false ? 'hidden' : 'visible'}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">Money Display</div>
+                        </div>
+                        <div className="rounded-lg border border-border/50 p-3 text-center">
+                          <div className="text-lg font-bold">
+                            {normalized.pauseEnabled ? 'on' : 'off'}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">Pauses</div>
+                        </div>
+                        {normalized.pauseEnabled ? (
+                          <>
+                            <div className="rounded-lg border border-border/50 p-3 text-center">
+                              <div className="text-lg font-bold">
+                                {normalized.pauseAfterResponses ?? '—'} / {(normalized.pauseDurationSeconds ?? 15)}s
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-1">
+                                Pause every {(normalized.pauseTrigger ?? 'rewarded') === 'rewarded' ? 'reward' : 'response'}
+                              </div>
+                            </div>
+                            <div className="rounded-lg border border-border/50 p-3 text-center">
+                              <div className="text-lg font-bold truncate">
+                                {(normalized.pauseResumeMode ?? 'auto') === 'auto'
+                                  ? 'auto'
+                                  : (normalized.pauseResumeBinding?.type ?? 'any') === 'any'
+                                    ? 'any input'
+                                    : normalized.pauseResumeBinding?.inputLabel ??
+                                      normalized.pauseResumeBinding?.type ??
+                                      'unset'}
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-1">Resume</div>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="rounded-lg border border-border/50 p-3 text-center opacity-40">
+                              <div className="text-lg font-bold">—</div>
+                              <div className="text-xs text-muted-foreground mt-1">Pause Schedule</div>
+                            </div>
+                            <div className="rounded-lg border border-border/50 p-3 text-center opacity-40">
+                              <div className="text-lg font-bold">—</div>
+                              <div className="text-xs text-muted-foreground mt-1">Resume</div>
+                            </div>
+                          </>
+                        )}
                       </div>
                       <div className="text-xs text-muted-foreground">
                         {normalized.inputs.length} input{normalized.inputs.length !== 1 ? 's' : ''} configured
