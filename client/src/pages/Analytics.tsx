@@ -17,6 +17,7 @@ import { api } from '../lib/api';
 import type { SessionDataResponse, SessionListItem, ChartDataPoint, ButtonPosition, Participant, ButtonShape, RawStoredConfig } from '../types';
 import { calculateAccuracy, calculateClickRate, formatDuration, parseSqliteDate, formatTimestamp } from '../lib/utils';
 import { normalizeConfig } from '../lib/normalizeConfig';
+import { formatRewardScheduleLabel, formatRewardScheduleSummary } from '../lib/rewardSchedules';
 
 function formatMoney(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
@@ -650,8 +651,12 @@ export function Analytics() {
                               <div className="text-xs text-muted-foreground mt-1">Money Awarded</div>
                             </div>
                             <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
-                              <div className="text-xl font-bold">{rewardedInputs[0].awardInterval}</div>
-                              <div className="text-xs text-muted-foreground mt-1">Award Interval</div>
+                              <div className="text-xl font-bold">
+                                {formatRewardScheduleSummary(rewardedInputs[0])}
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-1">
+                                {formatRewardScheduleLabel(rewardedInputs[0])}
+                              </div>
                             </div>
                           </>
                         ) : (

@@ -7,6 +7,7 @@ import { api } from '../lib/api';
 import type { Configuration, SessionListItem, RawStoredConfig } from '../types';
 import { formatTimestamp } from '../lib/utils';
 import { normalizeConfig } from '../lib/normalizeConfig';
+import { formatRewardScheduleSummary } from '../lib/rewardSchedules';
 
 function ConfigSessionsList({ configId }: { configId: string }) {
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
@@ -172,7 +173,8 @@ export function Configurations() {
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Award:</span>
                             <span className="font-medium">
-                              ${(rewardedInputs[0].moneyAwarded / 100).toFixed(2)} / {rewardedInputs[0].awardInterval} clicks
+                              ${(rewardedInputs[0].moneyAwarded / 100).toFixed(2)} /{' '}
+                              {formatRewardScheduleSummary(rewardedInputs[0])}
                             </span>
                           </div>
                         )}

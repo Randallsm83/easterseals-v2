@@ -29,6 +29,7 @@ export function Session() {
     sessionActive,
     incrementClick,
     incrementInterval,
+    getRewardTarget,
     resetInterval,
     awardMoney,
     setMoneyLimitReached,
@@ -297,8 +298,9 @@ export function Session() {
 
     if (inputConfig.isRewarded && !moneyLimitReached) {
       const newInterval = incrementInterval(inputId);
+      const rewardTarget = getRewardTarget(inputId);
 
-      if (newInterval >= inputConfig.awardInterval) {
+      if (newInterval >= rewardTarget) {
         resetInterval(inputId);
 
         const potentialNewTotal = moneyCounter + inputConfig.moneyAwarded;
@@ -350,7 +352,7 @@ export function Session() {
       }
     }
   }, [config, sessionId, sessionActive, moneyCounter, moneyLimitReached, timeLimitReached, isPaused,
-    incrementClick, incrementInterval, resetInterval, awardMoney, playAwardSound, handleMoneyLimitEnd]);
+    incrementClick, incrementInterval, getRewardTarget, resetInterval, awardMoney, playAwardSound, handleMoneyLimitEnd]);
 
   // External input handler — wraps handleInputActivation for physical inputs
   const handleExternalInput = useCallback(async (inputId: string) => {

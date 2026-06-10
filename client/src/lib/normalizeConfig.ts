@@ -1,4 +1,5 @@
 import type { BaseConfig, InputConfig, SessionConfig, RawStoredConfig, ButtonPosition } from '../types';
+import { sanitizeRewardIntervals } from './rewardSchedules';
 
 /**
  * Detect whether a stored config is in the old (legacy) format.
@@ -7,6 +8,15 @@ import type { BaseConfig, InputConfig, SessionConfig, RawStoredConfig, ButtonPos
  */
 function isLegacyConfig(raw: RawStoredConfig): boolean {
   return !Array.isArray(raw.inputs) && raw.leftButton != null;
+}
+
+function normalizeInput(input: InputConfig): InputConfig {
+  const rewardIntervals = sanitizeRewardIntervals(input.rewardIntervals);
+  return {
+    ...input,
+    rewardSchedule: input.rewardSchedule ?? 'fixed',
+    rewardIntervals: rewardIntervals.length > 0 ? rewardIntervals : undefined,
+  };
 }
 
 /**
@@ -34,6 +44,8 @@ function convertLegacyConfig(raw: RawStoredConfig): BaseConfig {
       isRewarded: isActive,
       moneyAwarded: isActive ? (raw.moneyAwarded ?? 5) : 5,
       awardInterval: isActive ? (raw.awardInterval ?? 10) : 10,
+      rewardSchedule: raw.rewardSchedule ?? 'fixed',
+      rewardIntervals: isActive ? sanitizeRewardIntervals(raw.rewardIntervals) : undefined,
       playAwardSound: isActive ? (raw.playAwardSound ?? true) : true,
     });
   }
@@ -50,6 +62,8 @@ function convertLegacyConfig(raw: RawStoredConfig): BaseConfig {
         isRewarded: ext.isActive ?? false,
         moneyAwarded: ext.moneyAwarded ?? 5,
         awardInterval: ext.awardInterval ?? 10,
+        rewardSchedule: ext.rewardSchedule ?? 'fixed',
+        rewardIntervals: sanitizeRewardIntervals(ext.rewardIntervals),
         playAwardSound: ext.playAwardSound ?? true,
       });
     }
@@ -86,7 +100,7 @@ export function normalizeConfig(raw: RawStoredConfig): BaseConfig {
     moneyLimit: raw.moneyLimit ?? 1000000,
     startingMoney: raw.startingMoney ?? 0,
     continueAfterMoneyLimit: raw.continueAfterMoneyLimit ?? true,
-    inputs: raw.inputs ?? [],
+    inputs: (raw.inputs ?? []).map((input: InputConfig) => normalizeInput(input)),
     showMoneyToParticipant: raw.showMoneyToParticipant ?? true,
     pauseEnabled: raw.pauseEnabled ?? false,
     pauseTrigger: raw.pauseTrigger,
