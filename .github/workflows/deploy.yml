@@ -17,10 +17,13 @@ jobs:
           username: easterseals
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            set -e
             export PATH="$HOME/.local/bin:$PATH"
             eval "$(mise activate bash)"
             cd ~/app
-            git pull origin main
+            git checkout -- client/package.json || true
+            rm -f client/scripts/generate-spa-fallbacks.mjs
+            git pull --ff-only origin main
             npm ci
             npm run build
             cp -r client/dist/* ~/es2.randall.codes/
