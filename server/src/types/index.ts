@@ -5,6 +5,7 @@ export const ButtonShapeSchema = z.enum(['none', 'rectangle', 'square', 'circle'
 export const ButtonPositionSchema = z.enum(['left', 'middle', 'right']);
 export const ExternalInputTypeSchema = z.enum(['keyboard', 'gamepad_button', 'gamepad_axis']);
 export const InputTypeSchema = z.enum(['screen', 'keyboard', 'gamepad_button', 'gamepad_axis']);
+export const RewardScheduleSchema = z.enum(['fixed', 'variable', 'custom']);
 
 export const ButtonConfigSchema = z.object({
   shape: ButtonShapeSchema,
@@ -21,6 +22,8 @@ export const ExternalInputConfigSchema = z.object({
   isActive: z.boolean(),
   moneyAwarded: z.number().int().nonnegative(),
   awardInterval: z.number().int().positive(),
+  rewardSchedule: RewardScheduleSchema.optional(),
+  rewardIntervals: z.array(z.number().int().positive()).optional(),
   playAwardSound: z.boolean(),
 });
 
@@ -41,6 +44,8 @@ export const InputConfigSchema = z.object({
   isRewarded: z.boolean(),
   moneyAwarded: z.number().int().nonnegative(),
   awardInterval: z.number().int().positive(),
+  rewardSchedule: RewardScheduleSchema.optional(),
+  rewardIntervals: z.array(z.number().int().positive()).optional(),
   playAwardSound: z.boolean(),
 });
 
@@ -79,6 +84,8 @@ export const LegacySessionConfigSchema = z.object({
   moneyLimit: z.number().int().nonnegative(),
   startingMoney: z.number().int().nonnegative(),
   awardInterval: z.number().int().positive(),
+  rewardSchedule: RewardScheduleSchema.optional(),
+  rewardIntervals: z.array(z.number().int().positive()).optional(),
   playAwardSound: z.boolean(),
   continueAfterMoneyLimit: z.boolean(),
   buttonActive: ButtonPositionSchema.nullable(),
@@ -139,6 +146,7 @@ export type ButtonShape = z.infer<typeof ButtonShapeSchema>;
 export type ButtonPosition = z.infer<typeof ButtonPositionSchema>;
 export type ExternalInputType = z.infer<typeof ExternalInputTypeSchema>;
 export type InputType = z.infer<typeof InputTypeSchema>;
+export type RewardSchedule = z.infer<typeof RewardScheduleSchema>;
 export type ButtonConfig = z.infer<typeof ButtonConfigSchema>;
 export type ExternalInputConfig = z.infer<typeof ExternalInputConfigSchema>;
 export type InputConfig = z.infer<typeof InputConfigSchema>;

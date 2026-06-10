@@ -7,6 +7,7 @@ import { Label } from '../components/ui/label';
 import { api } from '../lib/api';
 import type { Configuration, RawStoredConfig } from '../types';
 import { normalizeConfig } from '../lib/normalizeConfig';
+import { formatRewardScheduleSummary } from '../lib/rewardSchedules';
 
 export function StartSession() {
   const { configId } = useParams<{ configId: string }>();
@@ -150,7 +151,10 @@ export function StartSession() {
                     {rewardedInputs.length > 0 && (
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Award:</span>
-                        <span>${(rewardedInputs[0].moneyAwarded / 100).toFixed(2)} per {rewardedInputs[0].awardInterval} clicks</span>
+                        <span>
+                          ${(rewardedInputs[0].moneyAwarded / 100).toFixed(2)} per{' '}
+                          {formatRewardScheduleSummary(rewardedInputs[0])}
+                        </span>
                       </div>
                     )}
                     <div className="flex justify-between">

@@ -4,6 +4,7 @@ export type ButtonPosition = 'left' | 'middle' | 'right';
 export type SessionLengthType = 'seconds' | 'points';
 export type ExternalInputType = 'keyboard' | 'gamepad_button' | 'gamepad_axis';
 export type InputType = 'screen' | 'keyboard' | 'gamepad_button' | 'gamepad_axis';
+export type RewardSchedule = 'fixed' | 'variable' | 'custom';
 
 export interface ButtonConfig {
   shape: ButtonShape;
@@ -19,6 +20,8 @@ export interface ExternalInputConfig {
   isActive: boolean;
   moneyAwarded: number;
   awardInterval: number;
+  rewardSchedule?: RewardSchedule;
+  rewardIntervals?: number[];
   playAwardSound: boolean;
 }
 
@@ -39,7 +42,9 @@ export interface InputConfig {
   // Reward settings (per-input)
   isRewarded: boolean;
   moneyAwarded: number;    // cents
-  awardInterval: number;   // activations per reward
+  awardInterval: number;   // exact or average activations per reward, depending on rewardSchedule
+  rewardSchedule?: RewardSchedule;
+  rewardIntervals?: number[]; // custom point-by-point intervals, used when rewardSchedule is 'custom'
   playAwardSound: boolean;
 }
 
@@ -78,7 +83,9 @@ export interface LegacyBaseConfig {
   moneyAwarded: number;
   moneyLimit: number;
   startingMoney: number;
-  awardInterval: number;
+  awardInterval: number; // exact or average activations per reward, depending on rewardSchedule
+  rewardSchedule?: RewardSchedule;
+  rewardIntervals?: number[];
   playAwardSound: boolean;
   continueAfterMoneyLimit: boolean;
   buttonActive: ButtonPosition | null;

@@ -6,8 +6,18 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { api } from '../lib/api';
 import { useInputCapture, type CapturedInput } from '../lib/useInputCapture';
-import type { BaseConfig, InputConfig, ButtonShape, RawStoredConfig, PauseTrigger, PauseResumeMode, PauseResumeBinding } from '../types';
+import type { BaseConfig, InputConfig, ButtonShape, RawStoredConfig, PauseTrigger, PauseResumeMode, PauseResumeBinding, RewardSchedule } from '../types';
 import { normalizeConfig } from '../lib/normalizeConfig';
+import {
+  balanceLastRewardInterval,
+  formatRewardAverage,
+  generateRewardIntervals,
+  getRewardIntervalsAverage,
+  getRewardIntervalsTotal,
+  resizeRewardIntervals,
+  sanitizeRewardIntervals,
+} from '../lib/rewardSchedules';
+import type { RewardVariation } from '../lib/rewardSchedules';
 
 // Dollar input helper — displays dollars, stores cents
 function DollarInput({
@@ -47,6 +57,107 @@ function DollarInput({
         className="pl-7"
         required={required}
       />
+    </div>
+  );
+}
+
+function PointScheduleEditor({
+  averageInterval,
+  intervals,
+  onChange,
+}: {
+  averageInterval: number;
+  intervals: number[] | undefined;
+  onChange: (intervals: number[]) => void;
+}) {
+  const sanitizedIntervals = sanitizeRewardIntervals(intervals);
+  const pointIntervals = sanitizedIntervals.length > 0 ? sanitizedIntervals : [averageInterval];
+  const intervalTotal = getRewardIntervalsTotal(pointIntervals);
+  const intervalAverage = getRewardIntervalsAverage(pointIntervals);
+  const targetTotal = averageInterval * pointIntervals.length;
+  const totalDifference = intervalTotal - targetTotal;
+  const isBalanced = totalDifference === 0;
+
+  const updateInterval = (index: number, value: number) => {
+    onChange(pointIntervals.map((interval, i) => (i === index ? Math.max(1, Math.round(value || 1)) : interval)));
+  };
+
+  const generateSchedule = (variation: RewardVariation) => {
+    onChange(generateRewardIntervals(averageInterval, pointIntervals.length, variation));
+  };
+
+  return (
+    <div className="space-y-3 rounded-md border border-border bg-muted/20 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <Label className="text-xs">Point-by-point schedule</Label>
+          <p className="text-xs text-muted-foreground mt-1">
+            The session rewards after each interval in order, then repeats this list if needed.
+          </p>
+        </div>
+        <div className="w-28 space-y-1">
+          <Label className="text-xs">Point count</Label>
+          <Input
+            type="number"
+            min="1"
+            value={pointIntervals.length}
+            onChange={(e) => onChange(resizeRewardIntervals(pointIntervals, parseInt(e.target.value) || 1, averageInterval))}
+            className="h-8 text-sm"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {pointIntervals.map((interval, index) => (
+          <div key={index} className="space-y-1">
+            <Label className="text-xs">Point {index + 1}</Label>
+            <Input
+              type="number"
+              min="1"
+              value={interval}
+              onChange={(e) => updateInterval(index, parseInt(e.target.value) || 1)}
+              className="h-8 text-sm"
+            />
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={() => generateSchedule('low')}>
+          Low variation
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => generateSchedule('medium')}>
+          Medium variation
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => generateSchedule('high')}>
+          High variation
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => onChange(balanceLastRewardInterval(pointIntervals, averageInterval))}
+        >
+          Balance last point
+        </Button>
+      </div>
+
+      <div className={`text-xs rounded border px-3 py-2 ${isBalanced ? 'border-primary/30 bg-primary/10' : 'border-accent/30 bg-accent/10'}`}>
+        <div>
+          Current average: <span className="font-semibold">{formatRewardAverage(intervalAverage)}</span>{' '}
+          activation{intervalAverage !== 1 ? 's' : ''} per point
+        </div>
+        <div className="text-muted-foreground">
+          Total: {intervalTotal} activation{intervalTotal !== 1 ? 's' : ''} across {pointIntervals.length}{' '}
+          point{pointIntervals.length !== 1 ? 's' : ''}; target total is {targetTotal}.
+          {!isBalanced && (
+            <>
+              {' '}This is {Math.abs(totalDifference)} activation{Math.abs(totalDifference) !== 1 ? 's' : ''}{' '}
+              {totalDifference > 0 ? 'above' : 'below'} target.
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -94,6 +205,7 @@ export function ConfigurationSetup() {
         isRewarded: true,
         moneyAwarded: 5,
         awardInterval: 10,
+        rewardSchedule: 'fixed',
         playAwardSound: true,
       },
       {
@@ -105,6 +217,7 @@ export function ConfigurationSetup() {
         isRewarded: false,
         moneyAwarded: 5,
         awardInterval: 10,
+        rewardSchedule: 'fixed',
         playAwardSound: true,
       },
       {
@@ -116,6 +229,7 @@ export function ConfigurationSetup() {
         isRewarded: false,
         moneyAwarded: 5,
         awardInterval: 10,
+        rewardSchedule: 'fixed',
         playAwardSound: true,
       },
     ],
@@ -166,6 +280,7 @@ export function ConfigurationSetup() {
         isRewarded: false,
         moneyAwarded: 5,
         awardInterval: 10,
+        rewardSchedule: 'fixed',
         playAwardSound: true,
       };
       setFormData(prev => ({
@@ -209,6 +324,7 @@ export function ConfigurationSetup() {
       isRewarded: false,
       moneyAwarded: 5,
       awardInterval: 10,
+      rewardSchedule: 'fixed',
       playAwardSound: true,
     };
     setFormData(prev => ({
@@ -521,6 +637,7 @@ export function ConfigurationSetup() {
                       <InputCard
                         key={input.id}
                         input={input}
+                        sessionTimeLimit={formData.timeLimit}
                         isExpanded={expandedInputId === input.id}
                         onToggleExpand={() => setExpandedInputId(expandedInputId === input.id ? null : input.id)}
                         onUpdate={(updates) => updateInput(input.id, updates)}
@@ -542,6 +659,7 @@ export function ConfigurationSetup() {
                       <InputCard
                         key={input.id}
                         input={input}
+                        sessionTimeLimit={formData.timeLimit}
                         isExpanded={expandedInputId === input.id}
                         onToggleExpand={() => setExpandedInputId(expandedInputId === input.id ? null : input.id)}
                         onUpdate={(updates) => updateInput(input.id, updates)}
@@ -720,6 +838,7 @@ function ColorSwatchPicker({ value, onChange }: { value: string; onChange: (colo
 
 interface InputCardProps {
   input: InputConfig;
+  sessionTimeLimit: number;
   isExpanded: boolean;
   onToggleExpand: () => void;
   onUpdate: (updates: Partial<InputConfig>) => void;
@@ -727,8 +846,13 @@ interface InputCardProps {
   onRebind?: () => void;
 }
 
-function InputCard({ input, isExpanded, onToggleExpand, onUpdate, onRemove, onRebind }: InputCardProps) {
+function InputCard({ input, sessionTimeLimit, isExpanded, onToggleExpand, onUpdate, onRemove, onRebind }: InputCardProps) {
   const isScreen = input.type === 'screen';
+  const rewardSchedule = input.rewardSchedule ?? 'fixed';
+  const isVariableSchedule = rewardSchedule === 'variable';
+  const isCustomSchedule = rewardSchedule === 'custom';
+  const customIntervals = sanitizeRewardIntervals(input.rewardIntervals);
+  const customAverage = getRewardIntervalsAverage(customIntervals);
 
   const typeBadge = isScreen ? 'Screen' : input.type === 'keyboard' ? 'Keyboard' : 'Gamepad';
 
@@ -792,7 +916,22 @@ function InputCard({ input, isExpanded, onToggleExpand, onUpdate, onRemove, onRe
       {/* Summary when collapsed */}
       {!isExpanded && input.isRewarded && (
         <p className="text-xs text-muted-foreground">
-          Awards ${(input.moneyAwarded / 100).toFixed(2)} every {input.awardInterval} activation{input.awardInterval !== 1 ? 's' : ''}
+          {isCustomSchedule && customIntervals.length > 0
+            ? (
+              <>
+                Awards ${(input.moneyAwarded / 100).toFixed(2)} using {customIntervals.length}{' '}
+                point interval{customIntervals.length !== 1 ? 's' : ''} averaging{' '}
+                {formatRewardAverage(customAverage)} activation{customAverage !== 1 ? 's' : ''}
+              </>
+            )
+            : (
+              <>
+                Awards ${(input.moneyAwarded / 100).toFixed(2)}{' '}
+                {isVariableSchedule ? 'about every' : 'every'} {input.awardInterval}{' '}
+                activation{input.awardInterval !== 1 ? 's' : ''}
+                {isVariableSchedule ? ' on average' : ''}
+              </>
+            )}
         </p>
       )}
 
@@ -916,7 +1055,9 @@ function InputCard({ input, isExpanded, onToggleExpand, onUpdate, onRemove, onRe
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Award Interval (activations)</Label>
+                    <Label className="text-xs">
+                      {isVariableSchedule || isCustomSchedule ? 'Target Average Award Interval' : 'Award Interval'} (activations)
+                    </Label>
                     <Input
                       type="number"
                       min="1"
@@ -924,8 +1065,44 @@ function InputCard({ input, isExpanded, onToggleExpand, onUpdate, onRemove, onRe
                       onChange={(e) => onUpdate({ awardInterval: parseInt(e.target.value) || 1 })}
                       className="h-9 text-sm"
                     />
+                    <p className="text-xs text-muted-foreground">
+                      {isCustomSchedule
+                        ? 'Used as the target when generating or balancing the point schedule below.'
+                        : isVariableSchedule
+                          ? `The app generates ${sessionTimeLimit} point interval${sessionTimeLimit !== 1 ? 's' : ''} at session start that average this target.`
+                          : 'Rewards occur exactly after this many activations.'}
+                    </p>
                   </div>
                 </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs">Reward Schedule</Label>
+                  <select
+                    value={rewardSchedule}
+                    onChange={(e) => {
+                      const nextSchedule = e.target.value as RewardSchedule;
+                      onUpdate({
+                        rewardSchedule: nextSchedule,
+                        rewardIntervals: nextSchedule === 'custom' && customIntervals.length === 0
+                          ? [input.awardInterval]
+                          : input.rewardIntervals,
+                      });
+                    }}
+                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                  >
+                    <option value="fixed">Fixed — exactly every N activations</option>
+                    <option value="variable">Variable generated — averages every N activations</option>
+                    <option value="custom">Point-by-point — choose each reward interval</option>
+                  </select>
+                </div>
+
+                {isCustomSchedule && (
+                  <PointScheduleEditor
+                    averageInterval={input.awardInterval}
+                    intervals={input.rewardIntervals}
+                    onChange={(rewardIntervals) => onUpdate({ rewardIntervals })}
+                  />
+                )}
 
                 <div className="flex items-center space-x-2">
                   <input
