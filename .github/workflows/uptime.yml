@@ -1,0 +1,191 @@
+name: Production Uptime
+
+on:
+  schedule:
+    - cron: '2-57/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      simulate_failure:
+        description: Exercise outage issue creation without taking a site down
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: production-uptime
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Probe public endpoints
+        id: probe
+        continue-on-error: true
+        env:
+          SIMULATE_FAILURE: ${{ inputs.simulate_failure || 'false' }}
+        shell: bash
+        run: |
+          set -u
+          failures=()
+
+          probe_http() {
+            local name="$1"
+            local url="$2"
+            if ! curl --fail --silent --show-error --location \
+              --connect-timeout 5 --max-time 15 \
+              --retry 2 --retry-delay 5 --retry-all-errors \
+              "$url" >/dev/null; then
+              failures+=("$name ($url)")
+            fi
+          }
+
+          probe_api() {
+            local name="$1"
+            local url="$2"
+            local response
+            if ! response=$(curl --fail --silent --show-error --location \
+              --connect-timeout 5 --max-time 15 \
+              --retry 2 --retry-delay 5 --retry-all-errors \
+              "$url"); then
+              failures+=("$name ($url)")
+              return
+            fi
+
+            if ! printf '%s' "$response" | node -e '
+          const body = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+          if (body.status !== "ok" || Number.isNaN(Date.parse(body.timestamp))) {
+            process.exit(1);
+          }
+          '; then
+              failures+=("$name returned an invalid health payload ($url)")
+            fi
+          }
+
+          probe_http 'Legacy site' 'https://es.randall.codes/'
+          probe_api 'V2 Node API' 'https://es2.randall.codes/api/health'
+
+          if [[ "$SIMULATE_FAILURE" == 'true' ]]; then
+            failures+=('Simulated outage requested by workflow_dispatch')
+          fi
+
+          if (( ${#failures[@]} == 0 )); then
+            echo 'Both production endpoints are healthy.'
+            exit 0
+          fi
+
+          {
+            echo 'failures<<EOF'
+            printf -- '- %s\n' "${failures[@]}"
+            echo 'EOF'
+          } >>"$GITHUB_OUTPUT"
+          printf 'Uptime failures:\n- %s\n' "${failures[*]}" >&2
+          exit 1
+
+      - name: Open outage issue
+        if: steps.probe.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          FAILURES: ${{ steps.probe.outputs.failures }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          label='uptime-alert'
+          title='[uptime] Production endpoint unavailable'
+
+          retry() {
+            local attempt=1
+            until "$@"; do
+              if (( attempt >= 3 )); then
+                return 1
+              fi
+              sleep $((attempt * 5))
+              attempt=$((attempt + 1))
+            done
+          }
+
+          retry gh label create "$label" \
+            --color B60205 \
+            --description 'Opened automatically by the production uptime monitor' \
+            --force
+
+          body=$(printf '%s\n\n%s\n\nRun: %s/%s/actions/runs/%s' \
+            "Detected by the hosted monitor at $(date -u -Iseconds)." \
+            "$FAILURES" \
+            "$GITHUB_SERVER_URL" \
+            "$GITHUB_REPOSITORY" \
+            "$GITHUB_RUN_ID")
+
+          for attempt in 1 2 3; do
+            if existing=$(gh issue list \
+              --state open \
+              --label "$label" \
+              --json number \
+              --jq '.[0].number // empty'); then
+              if [[ -n "$existing" ]]; then
+                echo "Outage issue #$existing is already open."
+                exit 0
+              fi
+
+              if gh issue create \
+                --title "$title" \
+                --body "$body" \
+                --label "$label" \
+                --assignee "$GITHUB_REPOSITORY_OWNER"; then
+                exit 0
+              fi
+            fi
+
+            if (( attempt < 3 )); then
+              sleep $((attempt * 5))
+            fi
+          done
+
+          echo 'Unable to create or confirm the outage issue after three attempts.' >&2
+          exit 1
+
+      - name: Close recovered outage issue
+        if: steps.probe.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          retry() {
+            local attempt=1
+            until "$@"; do
+              if (( attempt >= 3 )); then
+                return 1
+              fi
+              sleep $((attempt * 5))
+              attempt=$((attempt + 1))
+            done
+          }
+
+          issues=$(retry gh issue list \
+            --state open \
+            --label uptime-alert \
+            --json number \
+            --jq '.[].number')
+
+          while read -r issue; do
+            [[ -n "$issue" ]] || continue
+            retry gh issue comment "$issue" \
+              --body "Recovered at $(date -u -Iseconds); both production probes pass."
+            retry gh issue close "$issue" --reason completed
+          done <<<"$issues"
+
+      - name: Fail workflow on outage
+        if: steps.probe.outcome == 'failure'
+        run: |
+          echo '${{ steps.probe.outputs.failures }}' >&2
+          exit 1
