@@ -32,8 +32,9 @@ app.use((req, _res, next) => {
   next();
 });
 
-// Health check
-app.get('/health', (_req, res) => {
+// Health checks: /health is available directly; /api/health is routed through
+// the DreamHost panel proxy and is the endpoint used by external monitoring.
+app.get(['/health', '/api/health'], (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 

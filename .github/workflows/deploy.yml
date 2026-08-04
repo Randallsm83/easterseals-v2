@@ -27,7 +27,5 @@ jobs:
             npm ci
             npm run build
             cp -r client/dist/* ~/es2.randall.codes/
-            pm2 delete es2-api 2>/dev/null || true
-            NODE_ENV=production PORT=8080 pm2 start server/dist/index.js --name es2-api -i max
-            pm2 save
+            "$HOME/bin/pm2-keepalive.sh" deploy es2-api
             SPA_FALLBACK_API_BASE_URL=http://127.0.0.1:8080/api node client/scripts/generate-spa-fallbacks.mjs ~/es2.randall.codes
