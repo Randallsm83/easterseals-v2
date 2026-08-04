@@ -21,9 +21,8 @@ jobs:
             export PATH="$HOME/.local/bin:$PATH"
             eval "$(mise activate bash)"
             cd ~/app
-            git checkout -- client/package.json || true
-            rm -f client/scripts/generate-spa-fallbacks.mjs
-            git pull --ff-only origin main
+            git fetch --prune origin main
+            git reset --hard origin/main
             npm ci
             npm run build
             cp -r client/dist/* ~/es2.randall.codes/
