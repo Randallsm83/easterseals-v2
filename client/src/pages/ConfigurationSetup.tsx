@@ -195,6 +195,8 @@ export function ConfigurationSetup() {
     pauseDurationSeconds: 15,
     pauseResumeMode: 'auto',
     pauseResumeBinding: { type: 'any' },
+    changeoverDelayEnabled: false,
+    changeoverDelayMs: 1000,
     inputs: [
       {
         id: `screen-${Date.now()}-1`,
@@ -446,7 +448,7 @@ export function ConfigurationSetup() {
           <Card>
             <CardHeader>
               <CardTitle>Participant Display &amp; Pauses</CardTitle>
-              <CardDescription>Control what the participant sees and add periodic breaks</CardDescription>
+              <CardDescription>Control what the participant sees, add periodic breaks, and set a changeover delay</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Show money to participant */}
@@ -581,6 +583,46 @@ export function ConfigurationSetup() {
                       onChange={(binding) => setFormData({ ...formData, pauseResumeBinding: binding })}
                     />
                   )}
+                </div>
+              )}
+
+              {/* Changeover delay */}
+              <div className="pt-3 border-t flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="changeoverDelayEnabled"
+                  checked={!!formData.changeoverDelayEnabled}
+                  onChange={(e) => setFormData({ ...formData, changeoverDelayEnabled: e.target.checked })}
+                  className="h-4 w-4 rounded border-border"
+                />
+                <Label htmlFor="changeoverDelayEnabled" className="cursor-pointer font-medium">
+                  Changeover delay
+                </Label>
+              </div>
+              <p className="text-xs text-muted-foreground pl-6">
+                After the participant activates any other input, a reward earned on a rewarded input
+                is held back until they have responded only on that rewarded input for the delay below.
+                The reward is paid on their next response on that input once the delay has elapsed.
+              </p>
+
+              {formData.changeoverDelayEnabled && (
+                <div className="pl-6 space-y-4 border-l-2 border-primary/30">
+                  <div className="space-y-2 max-w-xs">
+                    <Label htmlFor="changeoverDelayMs">Changeover delay (milliseconds)</Label>
+                    <Input
+                      id="changeoverDelayMs"
+                      type="number"
+                      min="1"
+                      step="50"
+                      value={formData.changeoverDelayMs ?? 1000}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          changeoverDelayMs: Math.max(1, parseInt(e.target.value) || 1),
+                        })
+                      }
+                    />
+                  </div>
                 </div>
               )}
             </CardContent>

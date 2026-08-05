@@ -83,6 +83,8 @@ function convertLegacyConfig(raw: RawStoredConfig): BaseConfig {
     pauseDurationSeconds: raw.pauseDurationSeconds,
     pauseResumeMode: raw.pauseResumeMode,
     pauseResumeBinding: raw.pauseResumeBinding,
+    changeoverDelayEnabled: raw.changeoverDelayEnabled ?? false,
+    changeoverDelayMs: raw.changeoverDelayMs ?? 1000,
   };
 }
 
@@ -108,6 +110,8 @@ export function normalizeConfig(raw: RawStoredConfig): BaseConfig {
     pauseDurationSeconds: raw.pauseDurationSeconds,
     pauseResumeMode: raw.pauseResumeMode,
     pauseResumeBinding: raw.pauseResumeBinding,
+    changeoverDelayEnabled: raw.changeoverDelayEnabled ?? false,
+    changeoverDelayMs: raw.changeoverDelayMs ?? 1000,
   };
 }
 

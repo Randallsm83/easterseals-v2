@@ -265,6 +265,13 @@ function createStatements() {
       ORDER BY timestamp ASC
     `),
 
+    getPauseResumeEvents: db.prepare(`
+      SELECT *
+      FROM session_event_log
+      WHERE sessionId = ? AND event IN ('pause', 'resume')
+      ORDER BY timestamp ASC
+    `),
+
     // Analytics queries
     getSessionStats: db.prepare(`
       SELECT 

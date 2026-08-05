@@ -15,7 +15,8 @@ import { Button } from '../components/ui/button';
 import { api } from '../lib/api';
 import type { Participant, SessionListItem, SessionDataResponse, RawStoredConfig } from '../types';
 import { normalizeConfig } from '../lib/normalizeConfig';
-import { parseSqliteDate, formatTimestamp, formatDuration } from '../lib/utils';
+import { buildActiveTimeline } from '../lib/activeTime';
+import { parseSqliteDate, formatTimestamp, formatDuration, responsesPerMinute } from '../lib/utils';
 
 const COMPARISON_PALETTE = [
   '#5ccc96', '#e39400', '#00a3cc', '#b3a1e6', '#ce6f8f', '#42b3c2', '#f2ce00',
@@ -31,16 +32,19 @@ interface SessionSummary {
   data: SessionDataResponse;
   stats: {
     duration: number;
+    activeDuration: number;
+    pausedDuration: number;
     totalClicks: number;
     correctClicks: number;
     accuracy: number;
     finalMoney: number;
-    clickRate: number;
+    rpmActive: number;
+    rpmWall: number;
   };
-  // Cumulative money over time: array of { t: seconds, money: cents }
-  moneyTimeline: { t: number; money: number }[];
+  // Cumulative money over time: t = wall-clock seconds, tActive = pause-excluded seconds
+  moneyTimeline: { t: number; tActive: number; money: number }[];
   // Cumulative total clicks over time
-  clickTimeline: { t: number; clicks: number }[];
+  clickTimeline: { t: number; tActive: number; clicks: number }[];
 }
 
 export function SessionComparison() {
@@ -50,6 +54,7 @@ export function SessionComparison() {
   const [loadedSessions, setLoadedSessions] = useState<SessionSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [participantFilter, setParticipantFilter] = useState('');
+  const [timeBasis, setTimeBasis] = useState<'wall' | 'active'>('active');
 
   useEffect(() => {
     api.getParticipants().then(setParticipants).catch(console.error);
@@ -92,7 +97,7 @@ export function SessionComparison() {
         if (!data.startEvent) {
           return {
             sessionId, color, data,
-            stats: { duration: 0, totalClicks: 0, correctClicks: 0, accuracy: 0, finalMoney: 0, clickRate: 0 },
+            stats: { duration: 0, activeDuration: 0, pausedDuration: 0, totalClicks: 0, correctClicks: 0, accuracy: 0, finalMoney: 0, rpmActive: 0, rpmWall: 0 },
             moneyTimeline: [], clickTimeline: [],
           };
         }
@@ -106,15 +111,19 @@ export function SessionComparison() {
         } else {
           endTime = startTime;
         }
+        const tl = buildActiveTimeline(startTime, endTime, data.pauseEvents);
 
         const duration = (endTime - startTime) / 1000;
+        const activeDuration = tl.activeMs / 1000;
+        const pausedDuration = tl.pausedMs / 1000;
         const totalClicks = data.allClicks.length;
         const correctClicks = data.allClicks.filter((c) => {
           const raw = c as unknown as Record<string, unknown>;
           return rewardedIds.has((raw.inputId ?? c.buttonClicked) as string);
         }).length;
         const accuracy = totalClicks > 0 ? Math.round((correctClicks / totalClicks) * 100) : 0;
-        const clickRate = duration > 0 ? Math.round((totalClicks / duration) * 100) / 100 : 0;
+        const rpmWall = responsesPerMinute(totalClicks, duration);
+        const rpmActive = responsesPerMinute(totalClicks, activeDuration);
 
         let finalMoney: number = data.startEvent?.value?.moneyCounter ?? 0;
         if (data.endEvent?.value?.moneyCounter !== undefined) {
@@ -122,13 +131,15 @@ export function SessionComparison() {
         }
 
         // Build timelines
-        const moneyTimeline: { t: number; money: number }[] = [];
-        const clickTimeline: { t: number; clicks: number }[] = [];
+        const moneyTimeline: { t: number; tActive: number; money: number }[] = [];
+        const clickTimeline: { t: number; tActive: number; clicks: number }[] = [];
         let cumClicks = 0;
         let cumMoney: number = normalizedCfg.startingMoney ?? 0;
 
         for (const click of data.allClicks) {
-          const t = (parseSqliteDate(click.timestamp).getTime() - startTime) / 1000;
+          const clickMs = parseSqliteDate(click.timestamp).getTime();
+          const t = (clickMs - startTime) / 1000;
+          const tActive = tl.activeMsAt(clickMs) / 1000;
           cumClicks++;
           const rawClick = click as unknown as Record<string, unknown>;
           if (rawClick.sessionInfo && typeof rawClick.sessionInfo === 'object') {
@@ -137,13 +148,13 @@ export function SessionComparison() {
           } else if (click.sessionInfo?.moneyCounter !== undefined) {
             cumMoney = click.sessionInfo.moneyCounter;
           }
-          moneyTimeline.push({ t: Math.round(t * 10) / 10, money: cumMoney });
-          clickTimeline.push({ t: Math.round(t * 10) / 10, clicks: cumClicks });
+          moneyTimeline.push({ t: Math.round(t * 10) / 10, tActive: Math.round(tActive * 10) / 10, money: cumMoney });
+          clickTimeline.push({ t: Math.round(t * 10) / 10, tActive: Math.round(tActive * 10) / 10, clicks: cumClicks });
         }
 
         return {
           sessionId, color, data,
-          stats: { duration, totalClicks, correctClicks, accuracy, finalMoney, clickRate },
+          stats: { duration, activeDuration, pausedDuration, totalClicks, correctClicks, accuracy, finalMoney, rpmActive, rpmWall },
           moneyTimeline,
           clickTimeline,
         };
@@ -158,8 +169,9 @@ export function SessionComparison() {
 
   // Normalize timelines to a common x-axis (time buckets every 5s)
   const normalizedMoneyData = useMemo(() => {
+    const xKey = timeBasis === 'active' ? 'tActive' : 't';
     if (!loadedSessions.length) return [];
-    const maxT = Math.max(...loadedSessions.map(s => s.moneyTimeline[s.moneyTimeline.length - 1]?.t ?? 0));
+    const maxT = Math.max(...loadedSessions.map(s => s.moneyTimeline[s.moneyTimeline.length - 1]?.[xKey] ?? 0));
     if (maxT === 0) return [];
 
     const points: Record<number, Record<string, number>> = {};
@@ -167,7 +179,7 @@ export function SessionComparison() {
       let lastMoney = session.data.startEvent?.value?.moneyCounter ?? 0;
       for (let t = 0; t <= maxT; t += 5) {
         // find last money value at or before t
-        const pointsAtT = session.moneyTimeline.filter(p => p.t <= t);
+        const pointsAtT = session.moneyTimeline.filter(p => p[xKey] <= t);
         if (pointsAtT.length > 0) {
           lastMoney = pointsAtT[pointsAtT.length - 1].money;
         }
@@ -176,25 +188,26 @@ export function SessionComparison() {
       }
     }
     return Object.values(points).sort((a, b) => (a.t as number) - (b.t as number));
-  }, [loadedSessions]);
+  }, [loadedSessions, timeBasis]);
 
   const normalizedClickData = useMemo(() => {
+    const xKey = timeBasis === 'active' ? 'tActive' : 't';
     if (!loadedSessions.length) return [];
-    const maxT = Math.max(...loadedSessions.map(s => s.clickTimeline[s.clickTimeline.length - 1]?.t ?? 0));
+    const maxT = Math.max(...loadedSessions.map(s => s.clickTimeline[s.clickTimeline.length - 1]?.[xKey] ?? 0));
     if (maxT === 0) return [];
 
     const points: Record<number, Record<string, number>> = {};
     for (const session of loadedSessions) {
       let lastClicks = 0;
       for (let t = 0; t <= maxT; t += 5) {
-        const pointsAtT = session.clickTimeline.filter(p => p.t <= t);
+        const pointsAtT = session.clickTimeline.filter(p => p[xKey] <= t);
         if (pointsAtT.length > 0) lastClicks = pointsAtT[pointsAtT.length - 1].clicks;
         if (!points[t]) points[t] = { t };
         points[t][session.sessionId] = lastClicks;
       }
     }
     return Object.values(points).sort((a, b) => (a.t as number) - (b.t as number));
-  }, [loadedSessions]);
+  }, [loadedSessions, timeBasis]);
 
   return (
     <div className="space-y-6">
@@ -269,6 +282,14 @@ export function SessionComparison() {
           </div>
 
           <div className="flex items-center gap-3">
+            <div className="flex gap-1">
+              <Button size="sm" variant={timeBasis === 'active' ? 'default' : 'outline'} onClick={() => setTimeBasis('active')}>
+                Active Time
+              </Button>
+              <Button size="sm" variant={timeBasis === 'wall' ? 'default' : 'outline'} onClick={() => setTimeBasis('wall')}>
+                Wall Clock
+              </Button>
+            </div>
             <Button
               onClick={handleCompare}
               disabled={selectedIds.length < 2 || loading}
@@ -309,10 +330,13 @@ export function SessionComparison() {
                   {/* Stat rows */}
                   {[
                     { label: 'Duration', fn: (s: SessionSummary) => formatDuration(s.stats.duration) },
+                    { label: 'Active Time', fn: (s: SessionSummary) => formatDuration(s.stats.activeDuration) },
+                    { label: 'Paused', fn: (s: SessionSummary) => formatDuration(s.stats.pausedDuration) },
                     { label: 'Total Clicks', fn: (s: SessionSummary) => s.stats.totalClicks.toString() },
                     { label: 'Correct Clicks', fn: (s: SessionSummary) => s.stats.correctClicks.toString() },
                     { label: 'Accuracy', fn: (s: SessionSummary) => `${s.stats.accuracy}%` },
-                    { label: 'Click Rate', fn: (s: SessionSummary) => `${s.stats.clickRate}/s` },
+                    { label: 'Responses / min (active)', fn: (s: SessionSummary) => s.stats.rpmActive.toFixed(2) },
+                    { label: 'Responses / min (wall)', fn: (s: SessionSummary) => s.stats.rpmWall.toFixed(2) },
                     { label: 'Money Earned', fn: (s: SessionSummary) => formatMoney(s.stats.finalMoney) },
                   ].map(({ label, fn }, rowIdx) => (
                     <div
@@ -336,7 +360,7 @@ export function SessionComparison() {
             <CardHeader>
               <CardTitle>Money Accumulation Over Time</CardTitle>
               <CardDescription>
-                Cumulative earnings (5-second buckets)
+                Cumulative earnings (5-second buckets, {timeBasis === 'active' ? 'active time' : 'wall clock'})
                 <span className="ml-4 inline-flex flex-wrap gap-3">
                   {loadedSessions.map(s => (
                     <span key={s.sessionId} className="inline-flex items-center gap-1.5">
@@ -354,7 +378,7 @@ export function SessionComparison() {
                   <XAxis dataKey="t" type="number"
                     domain={['dataMin', 'dataMax']}
                     stroke="#888" tick={{ fill: '#888' }}
-                    label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
+                    label={{ value: timeBasis === 'active' ? 'Active Time (seconds)' : 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
                   />
                   <YAxis stroke="#888" tick={{ fill: '#888' }}
                     tickFormatter={(v: number) => `$${(v / 100).toFixed(2)}`}
@@ -364,7 +388,7 @@ export function SessionComparison() {
                     contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
                     labelStyle={{ color: '#fff' }}
                     formatter={(value: number) => [formatMoney(value), '']}
-                    labelFormatter={(value: number) => `Time: ${value}s`}
+                    labelFormatter={(value: number) => (timeBasis === 'active' ? `Active: ${value}s` : `Time: ${value}s`)}
                   />
                   <Legend verticalAlign="top" iconType="line" wrapperStyle={{ paddingBottom: 10 }} />
                   {loadedSessions.map(s => (
@@ -389,7 +413,7 @@ export function SessionComparison() {
             <CardHeader>
               <CardTitle>Click Accumulation Over Time</CardTitle>
               <CardDescription>
-                Cumulative clicks (5-second buckets)
+                Cumulative clicks (5-second buckets, {timeBasis === 'active' ? 'active time' : 'wall clock'})
                 <span className="ml-4 inline-flex flex-wrap gap-3">
                   {loadedSessions.map(s => (
                     <span key={s.sessionId} className="inline-flex items-center gap-1.5">
@@ -407,7 +431,7 @@ export function SessionComparison() {
                   <XAxis dataKey="t" type="number"
                     domain={['dataMin', 'dataMax']}
                     stroke="#888" tick={{ fill: '#888' }}
-                    label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
+                    label={{ value: timeBasis === 'active' ? 'Active Time (seconds)' : 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
                   />
                   <YAxis stroke="#888" tick={{ fill: '#888' }}
                     label={{ value: 'Total Clicks', angle: -90, position: 'insideLeft', offset: -10, fill: '#888' }}
@@ -416,7 +440,7 @@ export function SessionComparison() {
                     contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
                     labelStyle={{ color: '#fff' }}
                     formatter={(value: number, name: string) => [value, name]}
-                    labelFormatter={(value: number) => `Time: ${value}s`}
+                    labelFormatter={(value: number) => (timeBasis === 'active' ? `Active: ${value}s` : `Time: ${value}s`)}
                   />
                   <Legend verticalAlign="top" iconType="line" wrapperStyle={{ paddingBottom: 10 }} />
                   {loadedSessions.map(s => (

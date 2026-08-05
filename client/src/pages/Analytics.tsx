@@ -15,9 +15,10 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../co
 import { Button } from '../components/ui/button';
 import { api } from '../lib/api';
 import type { SessionDataResponse, SessionListItem, ChartDataPoint, ButtonPosition, Participant, ButtonShape, RawStoredConfig } from '../types';
-import { calculateAccuracy, calculateClickRate, formatDuration, parseSqliteDate, formatTimestamp } from '../lib/utils';
+import { calculateAccuracy, formatDuration, parseSqliteDate, formatTimestamp, responsesPerMinute } from '../lib/utils';
 import { normalizeConfig } from '../lib/normalizeConfig';
 import { formatRewardScheduleLabel, formatRewardScheduleSummary } from '../lib/rewardSchedules';
+import { buildActiveTimeline } from '../lib/activeTime';
 
 function formatMoney(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
@@ -83,6 +84,7 @@ export function Analytics() {
   const [notes, setNotes] = useState('');
   const [notesSaving, setNotesSaving] = useState(false);
   const [notesSaved, setNotesSaved] = useState(false);
+  const [timeBasis, setTimeBasis] = useState<'wall' | 'active'>('active');
 
   useEffect(() => {
     loadParticipants();
@@ -174,12 +176,27 @@ export function Analytics() {
     loadSessionData(sessionId);
   };
 
+  // Single source of the session window and its pause accounting. `stats` and
+  // `chartData` both read this so wall-clock and active-time figures cannot drift.
+  const timeline = useMemo(() => {
+    if (!sessionData || !sessionData.startEvent) return null;
+    const startMs = parseSqliteDate(sessionData.startEvent.timestamp).getTime();
+    let endMs: number;
+    if (sessionData.endEvent) {
+      endMs = parseSqliteDate(sessionData.endEvent.timestamp).getTime();
+    } else if (sessionData.allClicks.length > 0) {
+      endMs = parseSqliteDate(sessionData.allClicks[sessionData.allClicks.length - 1].timestamp).getTime();
+    } else {
+      endMs = startMs;
+    }
+    return buildActiveTimeline(startMs, endMs, sessionData.pauseEvents);
+  }, [sessionData]);
+
   const chartData = useMemo((): ChartDataPoint[] => {
-    if (!sessionData || !sessionData.startEvent) return [];
+    if (!sessionData || !sessionData.startEvent || !timeline) return [];
 
     const rawConfig = sessionData.sessionConfig as unknown as RawStoredConfig;
     const isNewModelConfig = Array.isArray(rawConfig.inputs);
-    const startTime = parseSqliteDate(sessionData.startEvent.timestamp).getTime();
 
     if (isNewModelConfig) {
       let totalCount = 0;
@@ -187,7 +204,7 @@ export function Analytics() {
 
       return sessionData.allClicks.map((click) => {
         const clickTime = parseSqliteDate(click.timestamp).getTime();
-        const timeElapsed = (clickTime - startTime) / 1000;
+        const timeElapsed = (clickTime - timeline.startMs) / 1000;
         const raw = click as unknown as Record<string, unknown>;
         const inputId = (raw.inputId ?? click.buttonClicked) as string;
 
@@ -196,6 +213,7 @@ export function Analytics() {
 
         return {
           timeElapsed: Number(timeElapsed.toFixed(2)),
+          activeElapsed: Number((timeline.activeMsAt(clickTime) / 1000).toFixed(2)),
           timestamp: click.timestamp,
           left: 0,
           middle: 0,
@@ -205,6 +223,7 @@ export function Analytics() {
           buttonClicked: click.buttonClicked,
           inputId,
           inputCounts: { ...perInputCounts },
+          codWithheld: (raw.codWithheld as boolean | undefined) === true,
         };
       });
     }
@@ -221,7 +240,7 @@ export function Analytics() {
 
     return sessionData.allClicks.map((click) => {
       const clickTime = parseSqliteDate(click.timestamp).getTime();
-      const timeElapsed = (clickTime - startTime) / 1000;
+      const timeElapsed = (clickTime - timeline.startMs) / 1000;
       const hasNewFormat = click.clickInfo?.left !== undefined && click.clickInfo?.total !== undefined;
 
       if (hasNewFormat) {
@@ -230,6 +249,7 @@ export function Analytics() {
           ?? 0;
         return {
           timeElapsed: Number(timeElapsed.toFixed(2)),
+          activeElapsed: Number((timeline.activeMsAt(clickTime) / 1000).toFixed(2)),
           timestamp: click.timestamp,
           left: click.clickInfo?.left ?? 0,
           middle: click.clickInfo?.middle ?? 0,
@@ -255,6 +275,7 @@ export function Analytics() {
 
       return {
         timeElapsed: Number(timeElapsed.toFixed(2)),
+        activeElapsed: Number((timeline.activeMsAt(clickTime) / 1000).toFixed(2)),
         timestamp: click.timestamp,
         left: leftCount,
         middle: middleCount,
@@ -264,22 +285,18 @@ export function Analytics() {
         buttonClicked: click.buttonClicked,
       };
     });
-  }, [sessionData]);
+  }, [sessionData, timeline]);
 
   const stats = useMemo(() => {
-    if (!sessionData || !sessionData.startEvent) return null;
+    if (!sessionData || !sessionData.startEvent || !timeline) return null;
 
-    const startTime = parseSqliteDate(sessionData.startEvent.timestamp).getTime();
-    let endTime: number;
-    if (sessionData.endEvent) {
-      endTime = parseSqliteDate(sessionData.endEvent.timestamp).getTime();
-    } else if (sessionData.allClicks.length > 0) {
-      endTime = parseSqliteDate(sessionData.allClicks[sessionData.allClicks.length - 1].timestamp).getTime();
-    } else {
-      endTime = startTime;
-    }
-    const duration = (endTime - startTime) / 1000;
+    const { startMs, endMs, pausedMs, activeMs } = timeline;
+    const duration = (endMs - startMs) / 1000;
+    const activeDuration = activeMs / 1000;
+    const pausedDuration = pausedMs / 1000;
     const totalClicks = sessionData.allClicks.length;
+    const rpmActive = responsesPerMinute(totalClicks, activeDuration);
+    const rpmWall = responsesPerMinute(totalClicks, duration);
 
     const rawConfig = sessionData.sessionConfig as unknown as RawStoredConfig;
     let correctClicks: number;
@@ -327,20 +344,24 @@ export function Analytics() {
 
     return {
       duration,
+      activeDuration,
+      pausedDuration,
       totalClicks,
       correctClicks,
       incorrectClicks: totalClicks - correctClicks,
       accuracy: calculateAccuracy(correctClicks, totalClicks),
-      clickRate: calculateClickRate(totalClicks, duration),
+      rpmActive,
+      rpmWall,
       finalMoney: finalMoney ?? 0,
       endReason,
     };
-  }, [sessionData, chartData]);
+  }, [sessionData, chartData, timeline]);
 
   const clickStats = useMemo((): Record<string, {
     firstClickTime: string | null;
     timeToFirstClick: number | null;
     totalClicks: number;
+    codWithheld: number;
   }> | null => {
     if (!sessionData || !sessionData.startEvent) return null;
 
@@ -348,14 +369,17 @@ export function Analytics() {
     const rawConfig = sessionData.sessionConfig as unknown as RawStoredConfig;
 
     if (Array.isArray(rawConfig.inputs)) {
-      const result: Record<string, { firstClickTime: string | null; timeToFirstClick: number | null; totalClicks: number }> = {};
+      const result: Record<string, { firstClickTime: string | null; timeToFirstClick: number | null; totalClicks: number; codWithheld: number }> = {};
       for (const click of sessionData.allClicks) {
         const raw = click as unknown as Record<string, unknown>;
         const inputId = (raw.inputId ?? click.buttonClicked) as string;
         if (!result[inputId]) {
-          result[inputId] = { firstClickTime: null, timeToFirstClick: null, totalClicks: 0 };
+          result[inputId] = { firstClickTime: null, timeToFirstClick: null, totalClicks: 0, codWithheld: 0 };
         }
         result[inputId].totalClicks++;
+        if ((click as unknown as Record<string, unknown>).codWithheld === true) {
+          result[inputId].codWithheld++;
+        }
         if (!result[inputId].firstClickTime) {
           const t = parseSqliteDate(click.timestamp);
           result[inputId].firstClickTime = t.toLocaleTimeString('en-US', {
@@ -369,10 +393,10 @@ export function Analytics() {
     }
 
     const buttons: ButtonPosition[] = ['left', 'middle', 'right'];
-    const result: Record<string, { firstClickTime: string | null; timeToFirstClick: number | null; totalClicks: number }> = {
-      left: { firstClickTime: null, timeToFirstClick: null, totalClicks: 0 },
-      middle: { firstClickTime: null, timeToFirstClick: null, totalClicks: 0 },
-      right: { firstClickTime: null, timeToFirstClick: null, totalClicks: 0 },
+    const result: Record<string, { firstClickTime: string | null; timeToFirstClick: number | null; totalClicks: number; codWithheld: number }> = {
+      left: { firstClickTime: null, timeToFirstClick: null, totalClicks: 0, codWithheld: 0 },
+      middle: { firstClickTime: null, timeToFirstClick: null, totalClicks: 0, codWithheld: 0 },
+      right: { firstClickTime: null, timeToFirstClick: null, totalClicks: 0, codWithheld: 0 },
     };
     for (const button of buttons) {
       const buttonClicks = sessionData.allClicks.filter(c => c.buttonClicked === button);
@@ -400,18 +424,20 @@ export function Analytics() {
     if (isNewModelExport) {
       const normalizedConf = normalizeConfig(rawConfig);
       const inputNameMap = new Map(normalizedConf.inputs.map(i => [i.id, i.name]));
-      headers = ['Time (s)', 'Input ID', 'Input Name', 'Total Clicks', 'Input Clicks', 'Money (cents)'];
+      headers = ['Time (s)', 'Active Time (s)', 'Input ID', 'Input Name', 'Total Clicks', 'Input Clicks', 'Money (cents)', 'COD Withheld'];
       rows = chartData.map((d) => [
         d.timeElapsed,
+        d.activeElapsed,
         d.inputId ?? '',
         d.inputId ? (inputNameMap.get(d.inputId) ?? '') : '',
         d.total,
         d.inputId ? (d.inputCounts?.[d.inputId] ?? 0) : 0,
         d.money,
+        d.codWithheld ? 1 : 0,
       ]);
     } else {
-      headers = ['Time (s)', 'Button', 'Total Clicks', 'Left', 'Middle', 'Right', 'Money (cents)'];
-      rows = chartData.map((d) => [d.timeElapsed, d.buttonClicked, d.total, d.left, d.middle, d.right, d.money]);
+      headers = ['Time (s)', 'Active Time (s)', 'Button', 'Total Clicks', 'Left', 'Middle', 'Right', 'Money (cents)'];
+      rows = chartData.map((d) => [d.timeElapsed, d.activeElapsed, d.buttonClicked, d.total, d.left, d.middle, d.right, d.money]);
     }
 
     const csv = [headers, ...rows].map((row) => row.join(',')).join('\n');
@@ -456,6 +482,12 @@ export function Analytics() {
     URL.revokeObjectURL(url);
   };
 
+  const xKey = timeBasis === 'active' ? 'activeElapsed' : 'timeElapsed';
+  const xOf = (d: ChartDataPoint) => (timeBasis === 'active' ? d.activeElapsed : d.timeElapsed);
+  const xAxisLabel = timeBasis === 'active' ? 'Active Time (seconds)' : 'Time (seconds)';
+  const tooltipTime = (value: number) =>
+    (timeBasis === 'active' ? `Active: ${value.toFixed(1)}s` : `Time: ${value.toFixed(1)}s`);
+
   if (loading && !sessionData) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -473,6 +505,14 @@ export function Analytics() {
         </div>
         {sessionData && (
           <div className="flex gap-2">
+            <div className="flex gap-1">
+              <Button size="sm" variant={timeBasis === 'active' ? 'default' : 'outline'} onClick={() => setTimeBasis('active')}>
+                Active Time
+              </Button>
+              <Button size="sm" variant={timeBasis === 'wall' ? 'default' : 'outline'} onClick={() => setTimeBasis('wall')}>
+                Wall Clock
+              </Button>
+            </div>
             {chartData.length > 0 && (
               <Button onClick={exportCSV} variant="outline">Export CSV</Button>
             )}
@@ -577,8 +617,8 @@ export function Analytics() {
                     <div className="text-xs text-muted-foreground mt-1">Accuracy</div>
                   </div>
                   <div className="text-center p-3 rounded-lg border border-border/50 bg-muted/30">
-                    <div className="text-xl font-bold">{stats.clickRate}/s</div>
-                    <div className="text-xs text-muted-foreground mt-1">Click Rate</div>
+                    <div className="text-xl font-bold">{stats.rpmActive}</div>
+                    <div className="text-xs text-muted-foreground mt-1">Responses / min (active)</div>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -589,6 +629,16 @@ export function Analytics() {
                   <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
                     <div className="text-xl font-bold">{formatMoney(stats.finalMoney)}</div>
                     <div className="text-xs text-muted-foreground mt-1">Money Earned</div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
+                    <div className="text-xl font-bold">{formatDuration(stats.activeDuration)}</div>
+                    <div className="text-xs text-muted-foreground mt-1">Active Time</div>
+                  </div>
+                  <div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-center">
+                    <div className="text-xl font-bold">{formatDuration(stats.pausedDuration)}</div>
+                    <div className="text-xs text-muted-foreground mt-1">Paused</div>
                   </div>
                 </div>
               </CardContent>
@@ -718,6 +768,20 @@ export function Analytics() {
                           </>
                         )}
                       </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="rounded-lg border border-border/50 p-3 text-center">
+                          <div className="text-lg font-bold">
+                            {normalized.changeoverDelayEnabled ? 'on' : 'off'}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">Changeover Delay</div>
+                        </div>
+                        <div className={`rounded-lg border border-border/50 p-3 text-center${normalized.changeoverDelayEnabled ? '' : ' opacity-40'}`}>
+                          <div className="text-lg font-bold">
+                            {normalized.changeoverDelayEnabled ? `${normalized.changeoverDelayMs ?? 1000} ms` : '—'}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">Delay Window</div>
+                        </div>
+                      </div>
                       <div className="text-xs text-muted-foreground">
                         {normalized.inputs.length} input{normalized.inputs.length !== 1 ? 's' : ''} configured
                         ({normalized.inputs.filter(i => i.type === 'screen').length} screen,{' '}
@@ -757,7 +821,7 @@ export function Analytics() {
                       <CardContent>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                           {inputsWithColors.map((input) => {
-                            const stat = clickStats[input.id] ?? { totalClicks: 0, firstClickTime: null, timeToFirstClick: null };
+                            const stat = clickStats[input.id] ?? { totalClicks: 0, firstClickTime: null, timeToFirstClick: null, codWithheld: 0 };
                             return (
                               <div key={input.id} className="relative">
                                 <div
@@ -793,6 +857,14 @@ export function Analytics() {
                                         {stat.timeToFirstClick !== null ? `${stat.timeToFirstClick}s` : '—'}
                                       </span>
                                     </div>
+                                    {normalizedConf.changeoverDelayEnabled && (
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-muted-foreground">Withheld (COD)</span>
+                                        <span className="font-mono text-xs bg-background/50 px-2 py-1 rounded">
+                                          {stat.codWithheld}
+                                        </span>
+                                      </div>
+                                    )}
                                   </div>
                                   {input.isRewarded && (
                                     <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-3 py-1 rounded-full font-semibold shadow-lg">
@@ -830,7 +902,7 @@ export function Analytics() {
                           <XAxis dataKey="x" type="number" name="Time"
                             domain={[0, (dataMax: number) => Math.ceil(dataMax)]}
                             stroke="#888" tick={{ fill: '#888' }} allowDecimals={false}
-                            label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
+                            label={{ value: xAxisLabel, position: 'bottom', offset: 20, fill: '#888' }}
                           />
                           <YAxis dataKey="y" type="number" name="Clicks"
                             domain={[0, (dataMax: number) => Math.max(1, Math.ceil(dataMax))]}
@@ -841,12 +913,12 @@ export function Analytics() {
                             contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
                             labelStyle={{ color: '#fff' }}
                             formatter={(value: number, name: string) => [value, name]}
-                            labelFormatter={(value: number) => `Time: ${value.toFixed(1)}s`}
+                            labelFormatter={tooltipTime}
                           />
                           {inputsWithColors.map(input => (
                             <Scatter key={input.id} name={input.name || 'Input'}
                               data={chartData.filter(d => d.inputId === input.id).map(d => ({
-                                x: d.timeElapsed, y: d.inputCounts?.[input.id] ?? 0,
+                                x: xOf(d), y: d.inputCounts?.[input.id] ?? 0,
                               }))}
                               fill={input.chartColor} shape={colorDot(input.chartColor)}
                             />
@@ -878,7 +950,7 @@ export function Analytics() {
                           <XAxis dataKey="x" type="number" name="Time"
                             domain={[0, (dataMax: number) => Math.ceil(dataMax)]}
                             stroke="#888" tick={{ fill: '#888' }} allowDecimals={false}
-                            label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
+                            label={{ value: xAxisLabel, position: 'bottom', offset: 20, fill: '#888' }}
                           />
                           <YAxis dataKey="y" type="number" name="Total"
                             domain={[0, (dataMax: number) => Math.max(1, Math.ceil(dataMax))]}
@@ -889,12 +961,12 @@ export function Analytics() {
                             contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
                             labelStyle={{ color: '#fff' }}
                             formatter={(value: number, name: string) => [value, name]}
-                            labelFormatter={(value: number) => `Time: ${value.toFixed(1)}s`}
+                            labelFormatter={tooltipTime}
                           />
                           {inputsWithColors.map(input => (
                             <Scatter key={input.id} name={input.name || 'Input'}
                               data={chartData.filter(d => d.inputId === input.id).map(d => ({
-                                x: d.timeElapsed, y: d.total,
+                                x: xOf(d), y: d.total,
                               }))}
                               fill={input.chartColor} shape={colorDot(input.chartColor)}
                             />
@@ -991,7 +1063,7 @@ export function Analytics() {
                         <XAxis dataKey="x" type="number" name="Time"
                           domain={[0, (dataMax: number) => Math.ceil(dataMax)]}
                           stroke="#888" tick={{ fill: '#888' }} allowDecimals={false}
-                          label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
+                          label={{ value: xAxisLabel, position: 'bottom', offset: 20, fill: '#888' }}
                         />
                         <YAxis dataKey="y" type="number" name="Clicks"
                           domain={[0, (dataMax: number) => Math.max(1, Math.ceil(dataMax))]}
@@ -1002,18 +1074,18 @@ export function Analytics() {
                           contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
                           labelStyle={{ color: '#fff' }}
                           formatter={(value: number, name: string) => [value, name]}
-                          labelFormatter={(value: number) => `Time: ${value.toFixed(1)}s`}
+                          labelFormatter={tooltipTime}
                         />
                         <Scatter name="Left Button"
-                          data={chartData.filter((d) => d.buttonClicked === 'left').map(d => ({ x: d.timeElapsed, y: d.left }))}
+                          data={chartData.filter((d) => d.buttonClicked === 'left').map(d => ({ x: xOf(d), y: d.left }))}
                           fill={CHART_COLORS.left} shape={colorDot(CHART_COLORS.left)}
                         />
                         <Scatter name="Middle Button"
-                          data={chartData.filter((d) => d.buttonClicked === 'middle').map(d => ({ x: d.timeElapsed, y: d.middle }))}
+                          data={chartData.filter((d) => d.buttonClicked === 'middle').map(d => ({ x: xOf(d), y: d.middle }))}
                           fill={CHART_COLORS.middle} shape={colorDot(CHART_COLORS.middle)}
                         />
                         <Scatter name="Right Button"
-                          data={chartData.filter((d) => d.buttonClicked === 'right').map(d => ({ x: d.timeElapsed, y: d.right }))}
+                          data={chartData.filter((d) => d.buttonClicked === 'right').map(d => ({ x: xOf(d), y: d.right }))}
                           fill={CHART_COLORS.right} shape={colorDot(CHART_COLORS.right)}
                         />
                       </ScatterChart>
@@ -1043,7 +1115,7 @@ export function Analytics() {
                         <XAxis dataKey="x" type="number" name="Time"
                           domain={[0, (dataMax: number) => Math.ceil(dataMax)]}
                           stroke="#888" tick={{ fill: '#888' }} allowDecimals={false}
-                          label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
+                          label={{ value: xAxisLabel, position: 'bottom', offset: 20, fill: '#888' }}
                         />
                         <YAxis dataKey="y" type="number" name="Total"
                           domain={[0, (dataMax: number) => Math.max(1, Math.ceil(dataMax))]}
@@ -1054,18 +1126,18 @@ export function Analytics() {
                           contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
                           labelStyle={{ color: '#fff' }}
                           formatter={(value: number, name: string) => [value, name]}
-                          labelFormatter={(value: number) => `Time: ${value.toFixed(1)}s`}
+                          labelFormatter={tooltipTime}
                         />
                         <Scatter name="Left Button"
-                          data={chartData.filter((d) => d.buttonClicked === 'left').map(d => ({ x: d.timeElapsed, y: d.total }))}
+                          data={chartData.filter((d) => d.buttonClicked === 'left').map(d => ({ x: xOf(d), y: d.total }))}
                           fill={CHART_COLORS.left} shape={colorDot(CHART_COLORS.left)}
                         />
                         <Scatter name="Middle Button"
-                          data={chartData.filter((d) => d.buttonClicked === 'middle').map(d => ({ x: d.timeElapsed, y: d.total }))}
+                          data={chartData.filter((d) => d.buttonClicked === 'middle').map(d => ({ x: xOf(d), y: d.total }))}
                           fill={CHART_COLORS.middle} shape={colorDot(CHART_COLORS.middle)}
                         />
                         <Scatter name="Right Button"
-                          data={chartData.filter((d) => d.buttonClicked === 'right').map(d => ({ x: d.timeElapsed, y: d.total }))}
+                          data={chartData.filter((d) => d.buttonClicked === 'right').map(d => ({ x: xOf(d), y: d.total }))}
                           fill={CHART_COLORS.right} shape={colorDot(CHART_COLORS.right)}
                         />
                       </ScatterChart>
@@ -1101,10 +1173,10 @@ export function Analytics() {
                   <ResponsiveContainer width="100%" height={300}>
                     <LineChart data={chartData} margin={{ top: 20, right: 30, bottom: 50, left: 60 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-                      <XAxis dataKey="timeElapsed" type="number"
+                      <XAxis dataKey={xKey} type="number"
                         domain={[0, (dataMax: number) => Math.ceil(dataMax)]}
                         stroke="#888" tick={{ fill: '#888' }} allowDecimals={false}
-                        label={{ value: 'Time (seconds)', position: 'bottom', offset: 20, fill: '#888' }}
+                        label={{ value: xAxisLabel, position: 'bottom', offset: 20, fill: '#888' }}
                       />
                       <YAxis dataKey="money" domain={[yMin, yMax]}
                         stroke="#888" tick={{ fill: '#888' }}
@@ -1114,7 +1186,7 @@ export function Analytics() {
                       <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
                         labelStyle={{ color: '#fff' }}
                         formatter={(value: number) => [formatMoney(value), 'Money']}
-                        labelFormatter={(value: number) => `Time: ${value.toFixed(1)}s`}
+                        labelFormatter={tooltipTime}
                       />
                       <Line type="stepAfter" dataKey="money" stroke="#b3a1e6" strokeWidth={2} dot={{ r: 3, fill: '#b3a1e6' }} />
                     </LineChart>

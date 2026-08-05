@@ -30,9 +30,9 @@ export function formatTimestamp(timestamp: string): string {
   return date.toLocaleString();
 }
 
-export function calculateClickRate(clicks: number, durationSeconds: number): number {
-  if (durationSeconds === 0) return 0;
-  return Number((clicks / durationSeconds).toFixed(2));
+export function responsesPerMinute(responses: number, durationSeconds: number): number {
+  if (durationSeconds <= 0) return 0;
+  return Number(((responses / durationSeconds) * 60).toFixed(2));
 }
 
 export function calculateAccuracy(correctClicks: number, totalClicks: number): number {
