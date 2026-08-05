@@ -14,6 +14,9 @@ interface SessionState {
   inputIntervalCounters: Record<string, number>;
   inputRewardTargets: Record<string, number>;
   inputRewardSequences: Record<string, number[]>;
+  // Rewards earned but withheld by the changeover delay, per inputId. Never lost:
+  // each is paid on the next activation of that input once the delay window is clear.
+  pendingRewards: Record<string, number>;
   moneyLimitReached: boolean;
   timeLimitReached: boolean;
   sessionActive: boolean;
@@ -24,6 +27,8 @@ interface SessionState {
   incrementInterval: (inputId: string) => number;
   getRewardTarget: (inputId: string) => number;
   resetInterval: (inputId: string) => void;
+  bankReward: (inputId: string) => void;
+  consumePendingReward: (inputId: string) => boolean;
   awardMoney: (cents: number) => void;
   setMoneyLimitReached: (reached: boolean) => void;
   setTimeLimitReached: (reached: boolean) => void;
@@ -40,6 +45,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   inputIntervalCounters: {},
   inputRewardTargets: {},
   inputRewardSequences: {},
+  pendingRewards: {},
   moneyLimitReached: false,
   timeLimitReached: false,
   sessionActive: false,
@@ -49,6 +55,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const inputIntervalCounters: Record<string, number> = {};
     const inputRewardTargets: Record<string, number> = {};
     const inputRewardSequences: Record<string, number[]> = {};
+    const pendingRewards: Record<string, number> = {};
     const generatedSequenceLength = getGeneratedRewardSequenceLength(config.timeLimit);
     for (const input of config.inputs ?? []) {
       const rewardState = getNextRewardTarget(input, [], generatedSequenceLength);
@@ -56,6 +63,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       inputIntervalCounters[input.id] = 0;
       inputRewardTargets[input.id] = rewardState.target;
       inputRewardSequences[input.id] = rewardState.sequence;
+      pendingRewards[input.id] = 0;
     }
     // Reset all session-scoped flags, otherwise state from a previous session in
     // the same browser tab (e.g. moneyLimitReached) leaks into the new session and
@@ -68,6 +76,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       inputIntervalCounters,
       inputRewardTargets,
       inputRewardSequences,
+      pendingRewards,
       moneyLimitReached: false,
       timeLimitReached: false,
       sessionActive: false,
@@ -124,6 +133,26 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       };
     }),
 
+  bankReward: (inputId) =>
+    set((state) => ({
+      pendingRewards: {
+        ...state.pendingRewards,
+        [inputId]: (state.pendingRewards[inputId] ?? 0) + 1,
+      },
+    })),
+
+  consumePendingReward: (inputId) => {
+    const current = get().pendingRewards[inputId] ?? 0;
+    if (current <= 0) return false;
+    set((state) => ({
+      pendingRewards: {
+        ...state.pendingRewards,
+        [inputId]: (state.pendingRewards[inputId] ?? 0) - 1,
+      },
+    }));
+    return true;
+  },
+
   awardMoney: (cents) =>
     set((state) => ({
       moneyCounter: state.moneyCounter + cents,
@@ -147,6 +176,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       const inputIntervalCounters: Record<string, number> = {};
       const inputRewardTargets: Record<string, number> = {};
       const inputRewardSequences: Record<string, number[]> = {};
+      const pendingRewards: Record<string, number> = {};
       const generatedSequenceLength = getGeneratedRewardSequenceLength(state.config?.timeLimit);
       for (const input of state.config?.inputs ?? []) {
         const rewardState = getNextRewardTarget(input, [], generatedSequenceLength);
@@ -154,6 +184,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         inputIntervalCounters[input.id] = 0;
         inputRewardTargets[input.id] = rewardState.target;
         inputRewardSequences[input.id] = rewardState.sequence;
+        pendingRewards[input.id] = 0;
       }
       return {
         moneyCounter: state.config?.startingMoney || 0,
@@ -162,6 +193,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         inputIntervalCounters,
         inputRewardTargets,
         inputRewardSequences,
+        pendingRewards,
         moneyLimitReached: false,
         timeLimitReached: false,
         sessionActive: false,

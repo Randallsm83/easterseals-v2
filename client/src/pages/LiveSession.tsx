@@ -6,13 +6,14 @@ import { Button } from '../components/ui/button';
 import { api } from '../lib/api';
 import type { RawStoredConfig } from '../types';
 import { normalizeConfig } from '../lib/normalizeConfig';
+import { responsesPerMinute } from '../lib/utils';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:3000/api');
 
 interface ClickEntry {
   timestamp: string;
   inputId: string;
-  inputLabel?: string;
+  codWithheld?: boolean;
   moneyCounter: number;
   awardedCents: number;
 }
@@ -40,10 +41,17 @@ export function LiveSession() {
   const [recentClicks, setRecentClicks] = useState<ClickEntry[]>([]);
   const [startTimestamp, setStartTimestamp] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  const [activeElapsed, setActiveElapsed] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
   const [inputConfig, setInputConfig] = useState<Record<string, { name: string; color?: string; type: string; inputLabel?: string }>>({});
   const [error, setError] = useState<string | null>(null);
   const esRef = useRef<EventSource | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Accumulated paused ms, and the start of the currently open pause. These are refs,
+  // not state: the SSE onmessage closure has dep array [sessionId] with exhaustive-deps
+  // disabled, so state read inside it would be stale.
+  const pausedMsRef = useRef(0);
+  const pauseStartedAtRef = useRef<number | null>(null);
 
   // Load session config for input name/color lookup
   useEffect(() => {
@@ -119,11 +127,13 @@ export function LiveSession() {
         const inputId = (data.inputId ?? data.buttonClicked ?? 'unknown') as string;
         const money = (data.moneyCounter ?? 0) as number;
         const awarded = (data.awardedCents ?? 0) as number;
+        const codWithheld = data.codWithheld === true;
         const entry: ClickEntry = {
           timestamp: ts,
           inputId,
           moneyCounter: money,
           awardedCents: awarded,
+          codWithheld,
         };
         setTotalClicks((prev) => prev + 1);
         setMoneyCounter(money);
@@ -136,6 +146,22 @@ export function LiveSession() {
         const finalMoney = (data.moneyCounter ?? data.finalMoney ?? moneyCounter) as number;
         setMoneyCounter(finalMoney);
         setSessionEnded(true);
+      }
+
+      if (type === 'pause') {
+        if (pauseStartedAtRef.current === null) {
+          pauseStartedAtRef.current = new Date(parsed.timestamp as string).getTime();
+        }
+        setIsPaused(true);
+      }
+
+      if (type === 'resume') {
+        if (pauseStartedAtRef.current !== null) {
+          const resumedAt = new Date(parsed.timestamp as string).getTime();
+          pausedMsRef.current += Math.max(0, resumedAt - pauseStartedAtRef.current);
+          pauseStartedAtRef.current = null;
+        }
+        setIsPaused(false);
       }
     };
 
@@ -156,6 +182,8 @@ export function LiveSession() {
     const start = new Date(startTimestamp).getTime();
     timerRef.current = setInterval(() => {
       setElapsed(Math.floor((Date.now() - start) / 1000));
+      const openPause = pauseStartedAtRef.current !== null ? Date.now() - pauseStartedAtRef.current : 0;
+      setActiveElapsed(Math.floor((Date.now() - start - pausedMsRef.current - openPause) / 1000));
     }, 1000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [startTimestamp, sessionEnded]);
@@ -254,7 +282,7 @@ export function LiveSession() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <Card>
           <CardContent className="pt-4 pb-4 text-center">
             <div className="text-3xl font-bold font-mono text-primary">{formatElapsed(elapsed)}</div>
@@ -263,8 +291,24 @@ export function LiveSession() {
         </Card>
         <Card>
           <CardContent className="pt-4 pb-4 text-center">
+            <div className="text-3xl font-bold font-mono text-primary">{formatElapsed(activeElapsed)}</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              {`Active${isPaused ? ' (paused)' : ''}`}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-4 text-center">
             <div className="text-3xl font-bold">{totalClicks}</div>
             <div className="text-xs text-muted-foreground mt-1">Total Clicks</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-4 text-center">
+            <div className="text-3xl font-bold">
+              {responsesPerMinute(totalClicks, activeElapsed).toFixed(1)}
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">Resp / min</div>
           </CardContent>
         </Card>
         <Card>
@@ -308,6 +352,11 @@ export function LiveSession() {
                       +{formatMoney(lastClick.awardedCents)} awarded
                     </div>
                   )}
+                  {lastClick.codWithheld && (
+                    <div className="text-sm text-accent font-medium">
+                      reward held (changeover delay)
+                    </div>
+                  )}
                 </div>
               );
             })() : (
@@ -340,6 +389,9 @@ export function LiveSession() {
                         <span className="font-medium">{name}</span>
                       </div>
                       <div className="flex items-center gap-2 text-muted-foreground">
+                        {click.codWithheld && (
+                          <span className="text-accent font-medium">held (COD)</span>
+                        )}
                         {click.awardedCents > 0 && (
                           <span className="text-primary font-medium">+{formatMoney(click.awardedCents)}</span>
                         )}

@@ -31,6 +31,8 @@ export function Session() {
     incrementInterval,
     getRewardTarget,
     resetInterval,
+    bankReward,
+    consumePendingReward,
     awardMoney,
     setMoneyLimitReached,
     setTimeLimitReached,
@@ -47,6 +49,9 @@ export function Session() {
 
   const [lastActivatedInput, setLastActivatedInput] = useState<string | null>(null);
   const lastActivatedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Wall-clock ms of the most recent activation, per inputId. A reward on input X is
+  // only delivered once every OTHER input has been quiet for changeoverDelayMs.
+  const lastActivationAtRef = useRef<Record<string, number>>({});
 
   // ---- Pause state ----
   const [isPaused, setIsPaused] = useState(false);
@@ -98,6 +103,7 @@ export function Session() {
           timeLimitReached: true,
           clicks: latest.inputClickCounts,
           totalClicks: latest.totalClicks,
+          pendingRewards: latest.pendingRewards,
         },
       }),
       api.endSession(sessionId!),
@@ -149,6 +155,7 @@ export function Session() {
             timeLimitReached: latest.timeLimitReached,
             clicks: latest.inputClickCounts,
             totalClicks: latest.totalClicks,
+            pendingRewards: latest.pendingRewards,
           },
         }),
         api.endSession(sessionId!),
@@ -189,6 +196,12 @@ export function Session() {
     });
   }, [isPaused, sessionId, scheduleTimeLimit]);
 
+  // Latest resumeSession callback. The auto-resume setTimeout below is armed while
+  // isPaused is still false, so calling resumeSession directly would capture a closure
+  // whose `if (!isPaused) return` guard short-circuits and the session never resumes.
+  const resumeSessionRef = useRef(resumeSession);
+  useEffect(() => { resumeSessionRef.current = resumeSession; }, [resumeSession]);
+
   // ---- Enter pause ----
   const pauseSession = useCallback(async () => {
     if (isPaused || !sessionId || !config) return;
@@ -219,7 +232,7 @@ export function Session() {
     if ((config.pauseResumeMode ?? 'auto') === 'auto') {
       setPauseRemainingSec(durationSec);
       pauseTimerRef.current = setTimeout(() => {
-        resumeSession();
+        resumeSessionRef.current();
       }, durationSec * 1000);
       pauseCountdownRef.current = setInterval(() => {
         setPauseRemainingSec((prev) => (prev !== null ? Math.max(0, prev - 1) : null));
@@ -227,7 +240,7 @@ export function Session() {
     } else {
       setPauseRemainingSec(null);
     }
-  }, [config, isPaused, sessionId, resumeSession]);
+  }, [config, isPaused, sessionId]);
 
   // Latest pauseSession callback (so handleInputActivation can call it without re-binding).
   const pauseSessionRef = useRef(pauseSession);
@@ -255,6 +268,7 @@ export function Session() {
         },
       });
 
+      lastActivationAtRef.current = {};
       startSession();
       scheduleTimeLimit(sessionConfig.timeLimit * 1000);
     } catch (err) {
@@ -278,6 +292,26 @@ export function Session() {
     };
   }, [sessionId, navigate, loadSessionConfig]);
 
+  // Pays out one reward for `inputConfig`, clamped to the session money limit, and
+  // returns the cents actually awarded.
+  const deliverReward = useCallback(async (inputConfig: InputConfig): Promise<number> => {
+    if (!config) return 0;
+    // Read the counter from the store, not the closure: a banked reward and a freshly
+    // earned one can resolve in the same tick, and the second must clamp against the
+    // already-mutated total. Same reasoning as the comment in handleMoneyLimitEnd.
+    const current = useSessionStore.getState().moneyCounter;
+    if (current + inputConfig.moneyAwarded >= config.moneyLimit) {
+      const awardedCents = config.moneyLimit - current;
+      awardMoney(awardedCents);
+      if (inputConfig.playAwardSound) playAwardSound();
+      await handleMoneyLimitEnd();
+      return awardedCents;
+    }
+    awardMoney(inputConfig.moneyAwarded);
+    if (inputConfig.playAwardSound) playAwardSound();
+    return inputConfig.moneyAwarded;
+  }, [config, awardMoney, playAwardSound, handleMoneyLimitEnd]);
+
   // Unified click handler — works for both screen buttons and physical inputs
   const handleInputActivation = useCallback(async (inputId: string) => {
     if (!config) return;
@@ -287,6 +321,19 @@ export function Session() {
     const inputConfig = config.inputs.find(i => i.id === inputId);
     if (!inputConfig) return;
 
+    const nowMs = Date.now();
+    const codEnabled = config.changeoverDelayEnabled === true;
+    const codMs = config.changeoverDelayMs ?? 1000;
+    let codSatisfied = true;
+    if (codEnabled) {
+      let lastOther = -Infinity;
+      for (const [id, at] of Object.entries(lastActivationAtRef.current)) {
+        if (id !== inputId && at > lastOther) lastOther = at;
+      }
+      codSatisfied = lastOther === -Infinity || nowMs - lastOther >= codMs;
+    }
+    lastActivationAtRef.current[inputId] = nowMs;
+
     incrementClick(inputId);
 
     // Visual flash
@@ -295,25 +342,26 @@ export function Session() {
     lastActivatedTimerRef.current = setTimeout(() => setLastActivatedInput(null), 200);
 
     let awardedCents = 0;
+    let codWithheld = false;
 
     if (inputConfig.isRewarded && !moneyLimitReached) {
+      // Pay out a previously withheld reward first, once the changeover delay is clear.
+      if (codSatisfied && consumePendingReward(inputId)) {
+        awardedCents = await deliverReward(inputConfig);
+      }
+
       const newInterval = incrementInterval(inputId);
       const rewardTarget = getRewardTarget(inputId);
 
       if (newInterval >= rewardTarget) {
         resetInterval(inputId);
-
-        const potentialNewTotal = moneyCounter + inputConfig.moneyAwarded;
-
-        if (potentialNewTotal >= config.moneyLimit) {
-          awardedCents = config.moneyLimit - moneyCounter;
-          awardMoney(awardedCents);
-          if (inputConfig.playAwardSound) playAwardSound();
-          await handleMoneyLimitEnd();
+        if (!codEnabled || (codSatisfied && awardedCents === 0)) {
+          awardedCents = await deliverReward(inputConfig);
         } else {
-          awardedCents = inputConfig.moneyAwarded;
-          awardMoney(inputConfig.moneyAwarded);
-          if (inputConfig.playAwardSound) playAwardSound();
+          // Either the changeover delay is not met, or one reward already went out on
+          // this response. Bank it; it pays on the next clear response on this input.
+          bankReward(inputId);
+          codWithheld = true;
         }
       }
     }
@@ -337,6 +385,8 @@ export function Session() {
         moneyCounter: moneyCounter + awardedCents,
         moneyLimitReached,
         timeLimitReached,
+        codWithheld,
+        codPending: useSessionStore.getState().pendingRewards[inputId] ?? 0,
       },
     });
 
@@ -352,7 +402,7 @@ export function Session() {
       }
     }
   }, [config, sessionId, sessionActive, moneyCounter, moneyLimitReached, timeLimitReached, isPaused,
-    incrementClick, incrementInterval, getRewardTarget, resetInterval, awardMoney, playAwardSound, handleMoneyLimitEnd]);
+    incrementClick, incrementInterval, getRewardTarget, resetInterval, deliverReward, bankReward, consumePendingReward]);
 
   // External input handler — wraps handleInputActivation for physical inputs
   const handleExternalInput = useCallback(async (inputId: string) => {

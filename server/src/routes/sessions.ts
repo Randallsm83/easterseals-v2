@@ -57,6 +57,11 @@ function normalizeClickValue(value: Record<string, unknown>) {
   if (value.inputSource) result.inputSource = value.inputSource;
   if (value.externalInputClicks) result.externalInputClicks = value.externalInputClicks;
 
+  // Changeover-delay bookkeeping. Use an undefined check, not truthiness: codWithheld
+  // is legitimately false and codPending is legitimately 0 on most clicks.
+  if (value.codWithheld !== undefined) result.codWithheld = value.codWithheld;
+  if (value.codPending !== undefined) result.codPending = value.codPending;
+
   return result;
 }
 
@@ -137,6 +142,7 @@ router.get('/:sessionId/data', (req, res) => {
     const startEventRow = statements.getSessionEventByType.get(sessionId, 'start') as EventRow | undefined;
     const endEventRow = statements.getSessionEventByType.get(sessionId, 'end') as EventRow | undefined;
     const clickRows = statements.getClickEvents.all(sessionId) as EventRow[];
+    const pauseRows = statements.getPauseResumeEvents.all(sessionId) as EventRow[];
 
     const startEvent = startEventRow ? {
       sessionId,
@@ -160,11 +166,17 @@ router.get('/:sessionId/data', (req, res) => {
       };
     });
 
+    const pauseEvents = pauseRows.map((row) => ({
+      event: row.event as 'pause' | 'resume',
+      timestamp: row.timestamp,
+    }));
+
     const response = {
       sessionConfig,
       startEvent,
       endEvent,
       allClicks,
+      pauseEvents,
     };
 
     res.json(response);

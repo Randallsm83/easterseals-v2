@@ -75,6 +75,10 @@ export interface BaseConfig {
   pauseDurationSeconds?: number;           // duration of each pause (auto mode)
   pauseResumeMode?: PauseResumeMode;       // 'auto' resumes after duration; 'manual' waits for input
   pauseResumeBinding?: PauseResumeBinding; // only for manual: 'any' to accept any input, else specific
+  // Changeover delay: hold back a reward on a rewarded input until the participant
+  // has responded only on that input for this many ms since activating any other input.
+  changeoverDelayEnabled?: boolean;
+  changeoverDelayMs?: number;
 }
 
 // Legacy base config (for backward compatibility with old stored data)
@@ -120,6 +124,8 @@ export interface SessionConfig {
   pauseDurationSeconds?: number;
   pauseResumeMode?: PauseResumeMode;
   pauseResumeBinding?: PauseResumeBinding;
+  changeoverDelayEnabled?: boolean;
+  changeoverDelayMs?: number;
 }
 
 // Raw config as stored in DB — could be old or new format
@@ -171,6 +177,8 @@ export interface ClickEvent {
   buttonClicked: ButtonPosition;
   clickInfo: ClickInfo;
   sessionInfo: SessionInfo;
+  codWithheld?: boolean;
+  codPending?: number;
 }
 
 export interface SessionStartEvent {
@@ -199,11 +207,17 @@ export interface SessionEndEvent {
   };
 }
 
+export interface PauseResumeEventRow {
+  event: 'pause' | 'resume';
+  timestamp: string;
+}
+
 export interface SessionDataResponse {
   sessionConfig: SessionConfigExtended;
   startEvent: SessionStartEvent | null;
   endEvent: SessionEndEvent | null;
   allClicks: ClickEvent[];
+  pauseEvents?: PauseResumeEventRow[];
 }
 
 export interface SessionListItem {
@@ -233,6 +247,7 @@ export interface SessionStats {
 // Chart data types
 export interface ChartDataPoint {
   timeElapsed: number;
+  activeElapsed: number; // pause-excluded seconds since session start
   timestamp: string;
   left: number;    // legacy 3-button model
   middle: number;  // legacy 3-button model
@@ -242,6 +257,7 @@ export interface ChartDataPoint {
   buttonClicked: ButtonPosition;
   inputId?: string;                       // new unified input model
   inputCounts?: Record<string, number>;   // new model: per-inputId cumulative count snapshot
+  codWithheld?: boolean;
 }
 
 export interface SessionNotes {

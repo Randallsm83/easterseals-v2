@@ -75,6 +75,9 @@ export const SessionConfigSchema = z.object({
   pauseDurationSeconds: z.number().int().positive().optional(),
   pauseResumeMode: PauseResumeModeSchema.optional(),
   pauseResumeBinding: PauseResumeBindingSchema.optional(),
+  // Changeover delay (session-wide)
+  changeoverDelayEnabled: z.boolean().optional(),
+  changeoverDelayMs: z.number().int().positive().optional(),
 });
 
 // Legacy session config schema (old format — still accepted on read)
@@ -176,11 +179,17 @@ export interface EventLogRow {
 }
 
 // API response types
+export interface PauseResumeEventRow {
+  event: 'pause' | 'resume';
+  timestamp: string;
+}
+
 export interface SessionDataResponse {
   sessionConfig: SessionConfig;
   startEvent: SessionStartEvent | null;
   endEvent: SessionEndEvent | null;
   allClicks: ClickEvent[];
+  pauseEvents: PauseResumeEventRow[];
 }
 
 export interface SessionListResponse {
