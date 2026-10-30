@@ -6,7 +6,7 @@ import { mkdirSync } from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const DB_PATH = join(__dirname, '../../data/easterseals.db');
+const DB_PATH = process.env.DATABASE_PATH || join(__dirname, '../../data/easterseals.db');
 
 // Ensure the data directory exists before opening the database, since
 // better-sqlite3 will not create parent directories on its own.
@@ -247,14 +247,14 @@ function createStatements() {
       SELECT * 
       FROM session_event_log 
       WHERE sessionId = ? 
-      ORDER BY timestamp ASC
+      ORDER BY timestamp ASC, id ASC
     `),
 
     getSessionEventByType: db.prepare(`
       SELECT * 
       FROM session_event_log 
       WHERE sessionId = ? AND event = ? 
-      ORDER BY timestamp ASC 
+      ORDER BY timestamp ASC, id ASC
       LIMIT 1
     `),
 
@@ -262,14 +262,14 @@ function createStatements() {
       SELECT * 
       FROM session_event_log 
       WHERE sessionId = ? AND event = 'click' 
-      ORDER BY timestamp ASC
+      ORDER BY timestamp ASC, id ASC
     `),
 
     getPauseResumeEvents: db.prepare(`
       SELECT *
       FROM session_event_log
       WHERE sessionId = ? AND event IN ('pause', 'resume')
-      ORDER BY timestamp ASC
+      ORDER BY timestamp ASC, id ASC
     `),
 
     // Analytics queries

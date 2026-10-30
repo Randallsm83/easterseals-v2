@@ -1,4 +1,4 @@
-import type { BaseConfig, Configuration, SessionDataResponse, SessionListItem, Participant, SessionNotes } from '../types';
+import type { BaseConfig, Configuration, SessionDataResponse, SessionEndValue, SessionListItem, Participant, SessionNotes } from '../types';
 
 // In production, use same-origin /api; in dev, use localhost:3000
 const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:3000/api');
@@ -97,9 +97,10 @@ class ApiClient {
     });
   }
 
-  async endSession(sessionId: string): Promise<{ message: string }> {
+  async endSession(sessionId: string, value: SessionEndValue, timestamp: string): Promise<{ message: string }> {
     return this.request(`/sessions/${sessionId}/end`, {
       method: 'POST',
+      body: JSON.stringify({ value, timestamp }),
     });
   }
 
@@ -112,7 +113,7 @@ class ApiClient {
   // Events
   async logEvent(data: {
     sessionId: string;
-    event: 'start' | 'end' | 'click' | 'pause' | 'resume';
+    event: 'start' | 'click' | 'pause' | 'resume';
     value: unknown;
     timestamp?: string;
   }): Promise<{ message: string }> {

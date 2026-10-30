@@ -1,6 +1,7 @@
 import { Router } from 'express';
-import { statements } from '../db/index.js';
-import { subscribe } from '../live/sessionEmitter.js';
+import { runInTransaction, statements } from '../db/index.js';
+import { emit, subscribe } from '../live/sessionEmitter.js';
+import { SessionEndEventSchema } from '../types/index.js';
 import { z } from 'zod';
 
 interface SessionRow {
@@ -79,6 +80,11 @@ const router = Router();
 const StartSessionSchema = z.object({
   participantId: z.string().min(1).max(100),
   configId: z.string(),
+});
+
+const EndSessionSchema = z.object({
+  value: SessionEndEventSchema.shape.value,
+  timestamp: SessionEndEventSchema.shape.timestamp.optional(),
 });
 
 // Get all sessions
@@ -229,16 +235,40 @@ router.post('/start', (req, res) => {
 // End session
 router.post('/:sessionId/end', (req, res) => {
   try {
-    const { sessionId } = req.params;
-    
-    const session = statements.getSession.get(sessionId);
-    if (!session) {
-      res.status(404).json({ error: 'Session not found' });
+    const result = EndSessionSchema.safeParse(req.body);
+    if (!result.success) {
+      res.status(400).json({
+        error: 'Invalid session end data',
+        details: result.error.flatten(),
+      });
       return;
     }
 
-    statements.updateSessionEnd.run(new Date().toISOString(), sessionId);
-    
+    const { sessionId } = req.params;
+    const { value } = result.data;
+    const timestamp = result.data.timestamp ?? new Date().toISOString();
+    const status = runInTransaction(() => {
+      const session = statements.getSession.get(sessionId) as SessionRow | undefined;
+      if (!session) return 404;
+      if (session.endedAt !== null || statements.getSessionEventByType.get(sessionId, 'end')) {
+        return 409;
+      }
+
+      statements.insertEvent.run(sessionId, 'end', JSON.stringify(value), timestamp);
+      statements.updateSessionEnd.run(timestamp, sessionId);
+      return 200;
+    });
+
+    if (status === 404) {
+      res.status(404).json({ error: 'Session not found' });
+      return;
+    }
+    if (status === 409) {
+      res.status(409).json({ error: 'Session already ended' });
+      return;
+    }
+
+    emit(sessionId, { type: 'end', sessionId, timestamp, data: value });
     res.json({ message: 'Session ended successfully' });
   } catch (error) {
     console.error('Error ending session:', error);

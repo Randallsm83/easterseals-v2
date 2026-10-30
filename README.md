@@ -35,8 +35,8 @@ A modern behavioral research tracking application for studying button-click patt
 ## Getting Started
 
 ### Prerequisites
-- Node.js >= 18
-- npm or pnpm
+- Node.js supported by Vite: `^20.19.0 || >=22.12.0`
+- npm (comes with Node.js)
 
 ### Installation
 
@@ -84,6 +84,17 @@ easterseals-v2/
 2. **Run Session**: Participants click buttons to earn points
 3. **View Analytics**: Analyze click patterns and performance metrics
 4. **Export Data**: Download session data for further analysis
+
+## Unreleased
+
+### Durable session completion
+
+- Session completion waits for every accepted event write, including the response that reaches the money limit or is still saving at time expiry. Writes preserve response acceptance order even when timestamps match.
+- Pause thresholds and automatic pause durations take effect at response acceptance, without waiting for network saves.
+- Final response counters and rewards are captured synchronously; completion retains that session's snapshot even if the researcher navigates to another session while saving.
+- One completion request records the end event and session end timestamp in a database transaction. The participant sees successful completion only after acknowledgement.
+- A failed event or completion write stops participation and reports the save failure without automatically retrying or inventing a successful ending.
+- Browser/API regression tests run against a disposable SQLite database. See [Regression tests](DEVELOPMENT.md#regression-tests).
 
 ## Latest Release
 

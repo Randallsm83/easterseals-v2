@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { statements } from '../db/index.js';
+import { runInTransaction, statements } from '../db/index.js';
 import { emit } from '../live/sessionEmitter.js';
 import { z } from 'zod';
 
@@ -8,7 +8,7 @@ const router = Router();
 // Log event schema
 const LogEventSchema = z.object({
   sessionId: z.string(),
-  event: z.enum(['start', 'end', 'click', 'pause', 'resume']),
+  event: z.enum(['start', 'click', 'pause', 'resume']),
   value: z.record(z.any()),
   timestamp: z.string().datetime().optional(),
 });
@@ -29,19 +29,25 @@ router.post('/', (req, res) => {
     const { sessionId, event, value } = result.data;
     const timestamp = result.data.timestamp || new Date().toISOString();
 
-    // Verify session exists
-    const session = statements.getSession.get(sessionId);
-    if (!session) {
+    const status = runInTransaction(() => {
+      const session = statements.getSession.get(sessionId) as { endedAt: string | null } | undefined;
+      if (!session) return 404;
+      if (session.endedAt !== null || statements.getSessionEventByType.get(sessionId, 'end')) {
+        return 409;
+      }
+
+      statements.insertEvent.run(sessionId, event, JSON.stringify(value), timestamp);
+      return 201;
+    });
+
+    if (status === 404) {
       res.status(404).json({ error: 'Session not found' });
       return;
     }
-
-    statements.insertEvent.run(
-      sessionId,
-      event,
-      JSON.stringify(value),
-      timestamp
-    );
+    if (status === 409) {
+      res.status(409).json({ error: 'Session already ended' });
+      return;
+    }
 
     // Broadcast to any live SSE listeners
     emit(sessionId, { type: event, sessionId, timestamp, data: value });

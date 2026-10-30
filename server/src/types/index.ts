@@ -135,12 +135,9 @@ export const SessionEndEventSchema = z.object({
     moneyCounter: z.number().int().nonnegative(),
     moneyLimitReached: z.boolean(),
     timeLimitReached: z.boolean(),
-    clicks: z.object({
-      total: z.number().int().nonnegative(),
-      left: z.number().int().nonnegative(),
-      middle: z.number().int().nonnegative(),
-      right: z.number().int().nonnegative(),
-    }),
+    clicks: z.record(z.number().int().nonnegative()),
+    totalClicks: z.number().int().nonnegative(),
+    pendingRewards: z.record(z.number().int().nonnegative()),
   }),
 });
 

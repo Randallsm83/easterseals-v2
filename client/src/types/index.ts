@@ -191,6 +191,12 @@ export interface SessionStartEvent {
   };
 }
 
+export interface SessionEndValue extends SessionInfo {
+  clicks: Record<string, number>;
+  totalClicks: number;
+  pendingRewards: Record<string, number>;
+}
+
 export interface SessionEndEvent {
   sessionId: string;
   timestamp: string;
@@ -198,12 +204,9 @@ export interface SessionEndEvent {
     moneyCounter: number;
     moneyLimitReached: boolean;
     timeLimitReached: boolean;
-    clicks: {
-      total: number;
-      left: number;
-      middle: number;
-      right: number;
-    };
+    clicks: Record<string, number>;
+    totalClicks?: number;
+    pendingRewards?: Record<string, number>;
   };
 }
 

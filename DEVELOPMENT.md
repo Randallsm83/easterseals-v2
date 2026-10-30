@@ -55,7 +55,7 @@
 ## Getting Started
 
 ### Prerequisites
-- Node.js >= 18
+- Node.js supported by Vite: `^20.19.0 || >=22.12.0`
 - npm (comes with Node.js)
 
 ### Installation
@@ -127,16 +127,19 @@ easterseals-v2/
 ### Sessions
 - `GET /api/sessions` - List all sessions with stats
 - `GET /api/sessions/:sessionId/data` - Get full session data (config + click/start/end events + ordered pause/resume events)
-- `POST /api/sessions` - Create new session (returns session ID)
-- `POST /api/sessions/:sessionId/start` - Start a created session
-- `POST /api/sessions/:sessionId/end` - End a session
+- `POST /api/sessions/start` - Create a session for a participant and configuration; the runner logs the actual participation start
+- `POST /api/sessions/:sessionId/end` - Atomically record the end event and session completion
 - `DELETE /api/sessions/:sessionId` - Delete session
 - `GET /api/sessions/:sessionId/notes` - Get session notes
 - `PUT /api/sessions/:sessionId/notes` - Save session notes
 - `GET /api/sessions/:sessionId/stream` - SSE stream for live monitoring
 
+The end request requires `value` with `moneyCounter`, `moneyLimitReached`, `timeLimitReached`, per-input `clicks`, `totalClicks`, and per-input `pendingRewards`. An optional ISO-8601 `timestamp` records when the ending condition occurred; the same timestamp is used for the event and `endedAt`. Counters must be nonnegative integers. Duplicate completion and event writes after completion return `409`; malformed completion returns `400`.
+
+The runner timestamps and snapshots events when accepted, then saves them in acceptance order. Pause thresholds and automatic pause duration timers transition synchronously at acceptance, not after queued writes finish. Before completion it stops accepting responses and drains accepted start/click/pause/resume writes. It captures the ending session's synchronous store snapshot before awaiting that drain, then submits completion. Success is displayed only after acknowledgement. Any failed write stops participation without an automatic retry. SSE end notifications are emitted only after the completion transaction commits.
+
 ### Events
-- `POST /api/events` - Log a session event (`start` | `click` | `end` | `pause` | `resume`)
+- `POST /api/events` - Log an event (`start` | `click` | `pause` | `resume`); completion records `end` through the dedicated endpoint
 - `GET /api/events/:sessionId` - Get events for a session
 - Click event values may include `codWithheld` and `codPending`; time- and money-limit end events include `pendingRewards`
 
@@ -152,6 +155,28 @@ easterseals-v2/
 - `GET /api/participants` - List participants
 - `POST /api/participants` - Create participant
 - `GET /api/participants/:id/sessions` - Sessions for a participant
+
+## Regression tests
+
+```bash
+# Install the browser after installing npm dependencies
+npx playwright install chromium
+
+# Full browser/API suite
+npm test
+
+# Focused runner scenarios
+npm test -- tests/session-completion.spec.ts
+
+# Focused atomic-completion API scenarios
+npm test -- tests/session-completion-api.spec.ts
+```
+
+Tests start their own Express and Vite processes on temporary loopback ports, use an isolated temporary SQLite file through `DATABASE_PATH`, and remove it after those processes stop. The default application database remains `server/data/easterseals.db`. Do not point these fixtures at research data.
+
+HTTP write delays/failures exercise the actual runner; API outcomes use the real database. A temporary SQLite trigger proves that a completion update failure rolls back the preceding end-event insert. Timing scenarios use a controlled browser clock. No physical gamepad verification is implied by simulated keyboard/browser coverage.
+
+If Node 24 aborts inside `RemoveEnvironmentCleanupHook` while collecting native SQLite statements, see [nodejs/node#65446](https://github.com/nodejs/node/issues/65446). The documented workaround is rebuilding the addon with compatible headers from before Node 24.19; reinstalling with affected headers can reintroduce the crash. This is a native runtime issue, not a reason to add test retries.
 
 ## Database Schema
 

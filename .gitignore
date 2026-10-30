@@ -45,3 +45,7 @@ lerna-debug.log*
 # OS
 Thumbs.db
 .DS_Store
+
+# Browser test artifacts
+/test-results/
+/playwright-report/
