@@ -33,6 +33,24 @@ export function initializeDatabase() {
       isArchived INTEGER DEFAULT 0
     );
 
+    CREATE TABLE IF NOT EXISTS session_sequences (
+      sequenceId TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS session_sequence_entries (
+      sequenceId TEXT NOT NULL,
+      position INTEGER NOT NULL CHECK (position >= 0),
+      configId TEXT NOT NULL,
+      PRIMARY KEY (sequenceId, position),
+      FOREIGN KEY (sequenceId) REFERENCES session_sequences(sequenceId) ON DELETE CASCADE,
+      FOREIGN KEY (configId) REFERENCES configurations(configId) ON DELETE RESTRICT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_session_sequence_entries_configId
+      ON session_sequence_entries(configId);
+
     CREATE TABLE IF NOT EXISTS sessions (
       sessionId TEXT PRIMARY KEY,
       participantId TEXT NOT NULL,
@@ -149,6 +167,47 @@ function createStatements() {
 
     deleteConfig: db.prepare(`
       DELETE FROM configurations WHERE configId = ?
+    `),
+
+    // Session sequences
+    getAllSequences: db.prepare(`
+      SELECT * FROM session_sequences ORDER BY createdAt DESC, sequenceId ASC
+    `),
+
+    getSequence: db.prepare(`
+      SELECT * FROM session_sequences WHERE sequenceId = ?
+    `),
+
+    getSequenceEntries: db.prepare(`
+      SELECT configId FROM session_sequence_entries WHERE sequenceId = ? ORDER BY position ASC
+    `),
+
+    getSequencesByConfig: db.prepare(`
+      SELECT DISTINCT s.sequenceId, s.name
+      FROM session_sequences s
+      JOIN session_sequence_entries e ON s.sequenceId = e.sequenceId
+      WHERE e.configId = ?
+      ORDER BY s.name ASC, s.sequenceId ASC
+    `),
+
+    insertSequence: db.prepare(`
+      INSERT INTO session_sequences (sequenceId, name) VALUES (?, ?)
+    `),
+
+    updateSequence: db.prepare(`
+      UPDATE session_sequences SET name = ? WHERE sequenceId = ?
+    `),
+
+    insertSequenceEntry: db.prepare(`
+      INSERT INTO session_sequence_entries (sequenceId, position, configId) VALUES (?, ?, ?)
+    `),
+
+    deleteSequenceEntries: db.prepare(`
+      DELETE FROM session_sequence_entries WHERE sequenceId = ?
+    `),
+
+    deleteSequence: db.prepare(`
+      DELETE FROM session_sequences WHERE sequenceId = ?
     `),
 
     // Sessions

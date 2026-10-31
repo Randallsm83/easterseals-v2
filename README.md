@@ -16,6 +16,7 @@ A modern behavioral research tracking application for studying button-click patt
 - 🙈 **Participant Display Control**: Optionally hide the money counter from the participant
 - 🌓 **Dark Mode**: Built-in theme support
 - 📱 **Responsive**: Mobile-first design
+- **Reusable Session Sequences**: Save named, ordered configuration lists, including repeated conditions, and revise them for future use
 
 ## Tech Stack
 
@@ -85,7 +86,27 @@ easterseals-v2/
 3. **View Analytics**: Analyze click patterns and performance metrics
 4. **Export Data**: Download session data for further analysis
 
+### Author a session sequence
+
+1. Save the configurations you want to use through **Configurations**.
+2. Open **Session Sequences**, choose **Create Sequence**, and enter a name.
+3. Select a saved configuration and choose **Add Configuration** for each entry. Add the same configuration again to create orders such as A → B → A. Archived configurations are labeled and remain selectable.
+4. Use **Move up**, **Move down**, or **Remove** to adjust entries, then choose **Save Sequence**. Controls support keyboard navigation; dragging is not required.
+5. Reopen a saved setup with **Edit** to rename it or change its entries. Saved changes survive page reload. **Cancel** discards the current draft.
+6. Choose **Delete** and confirm to remove an obsolete setup. Its configurations and recorded sessions remain intact.
+
+Names must contain non-whitespace text and be at most 200 characters; each sequence must contain at least one saved configuration. Failed saves display an error and keep the draft. Configurations referenced by a saved sequence can be edited, but deletion is blocked until every referencing setup releases them.
+
+This workflow authors reusable setups only. Sequence launch and participant execution are tracked separately in [#58](https://github.com/Randallsm83/easterseals-v2/issues/58); no launch control is included here.
+
 ## Unreleased
+
+### Reusable session sequence authoring (#57)
+
+- Added persistent named setup creation, listing, reopening, renaming, reordering, repeated entries, removal, and deletion.
+- Added validated transactional sequence APIs and reference-backed configuration-deletion protection without rewriting historical research data.
+- Added real browser/API/isolated-SQLite regression coverage for A → B → A persistence, revisions, invalid submissions, and deletion guards.
+- Authoring does not change standalone sessions or add sequence execution.
 
 ### Durable session completion
 

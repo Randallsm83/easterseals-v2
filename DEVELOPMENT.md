@@ -150,6 +150,18 @@ The runner timestamps and snapshots events when accepted, then saves them in acc
 - `PUT /api/configurations/:id` - Update configuration
 - `POST /api/configurations/:id/archive` - Archive
 - `POST /api/configurations/:id/unarchive` - Unarchive
+- `DELETE /api/configurations/:id` - Delete configuration, returning `409` if a saved session sequence references it
+
+### Session sequences
+- `GET /api/sequences` - List reusable sequence setups with ordered configuration IDs
+- `GET /api/sequences/:sequenceId` - Get a saved setup
+- `POST /api/sequences` - Create a setup with `{ name, configIds }`
+- `PUT /api/sequences/:sequenceId` - Replace its name and ordered entries
+- `DELETE /api/sequences/:sequenceId` - Delete the setup and its entries, not configurations or research records
+
+Create/update return `{ sequenceId, name, configIds, createdAt }`. Names are trimmed, required, and limited to 200 characters. `configIds` must be a nonempty ordered array of existing saved configuration IDs, each 1–100 characters; repeats and archived configurations are allowed. Invalid submissions return `400`; missing setups return `404`. Create/update are transactional. Referenced configuration deletion returns `409` with the referencing sequence names/IDs, while configuration editing remains allowed.
+
+Persistence adds `session_sequences` and `session_sequence_entries`; `(sequenceId, position)` distinguishes repeated entries. Entry references restrict configuration deletion, and deleting a sequence cascades only to its setup entries. Existing standalone configurations, sessions, and events are not rewritten. Sequence execution is separate work.
 
 ### Participants
 - `GET /api/participants` - List participants
@@ -170,6 +182,9 @@ npm test -- tests/session-completion.spec.ts
 
 # Focused atomic-completion API scenarios
 npm test -- tests/session-completion-api.spec.ts
+
+# Focused reusable-sequence authoring and deletion-protection scenarios
+npm test -- tests/session-sequences.spec.ts
 ```
 
 Tests start their own Express and Vite processes on temporary loopback ports, use an isolated temporary SQLite file through `DATABASE_PATH`, and remove it after those processes stop. The default application database remains `server/data/easterseals.db`. Do not point these fixtures at research data.

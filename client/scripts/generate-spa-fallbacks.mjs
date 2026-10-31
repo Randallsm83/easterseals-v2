@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 const staticRoutes = [
   'participants',
   'configurations',
+  'sequences',
   'config/new',
   'analytics',
   'monitor',

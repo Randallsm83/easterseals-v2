@@ -1,4 +1,4 @@
-import type { BaseConfig, Configuration, SessionDataResponse, SessionEndValue, SessionListItem, Participant, SessionNotes } from '../types';
+import type { BaseConfig, Configuration, SessionSequence, SessionDataResponse, SessionEndValue, SessionListItem, Participant, SessionNotes } from '../types';
 
 // In production, use same-origin /api; in dev, use localhost:3000
 const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:3000/api');
@@ -79,6 +79,31 @@ class ApiClient {
 
   async getConfigurationSessions(configId: string): Promise<SessionListItem[]> {
     return this.request<SessionListItem[]>(`/configurations/${configId}/sessions`);
+  }
+
+  // Session sequences
+  async getSequences(): Promise<SessionSequence[]> {
+    return this.request<SessionSequence[]>('/sequences');
+  }
+
+  async createSequence(data: { name: string; configIds: string[] }): Promise<SessionSequence> {
+    return this.request<SessionSequence>('/sequences', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSequence(sequenceId: string, data: { name: string; configIds: string[] }): Promise<SessionSequence> {
+    return this.request<SessionSequence>(`/sequences/${sequenceId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSequence(sequenceId: string): Promise<{ message: string }> {
+    return this.request(`/sequences/${sequenceId}`, {
+      method: 'DELETE',
+    });
   }
 
   // Sessions

@@ -109,6 +109,13 @@ export interface Configuration {
   sessionCount?: number;
 }
 
+export interface SessionSequence {
+  sequenceId: string;
+  name: string;
+  configIds: string[];
+  createdAt: string;
+}
+
 export interface SessionConfig {
   sessionId: string;
   configId: string;

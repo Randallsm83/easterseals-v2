@@ -98,6 +98,18 @@ export const LegacySessionConfigSchema = z.object({
   externalInputs: z.array(ExternalInputConfigSchema).optional(),
 });
 
+export const SessionSequenceInputSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  configIds: z.array(z.string().min(1).max(100)).min(1),
+});
+
+type SessionSequenceInput = z.infer<typeof SessionSequenceInputSchema>;
+
+export interface SessionSequence extends SessionSequenceInput {
+  sequenceId: string;
+  createdAt: string;
+}
+
 // Click event schema
 export const ClickEventSchema = z.object({
   sessionId: z.string(),

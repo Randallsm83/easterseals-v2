@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { statements } from '../db/index.js';
+import { runInTransaction, statements } from '../db/index.js';
 import { SessionConfigSchema, LegacySessionConfigSchema } from '../types/index.js';
 import { z } from 'zod';
 
@@ -153,13 +153,28 @@ router.delete('/:configId', (req, res) => {
   try {
     const { configId } = req.params;
     
-    const config = statements.getConfig.get(configId);
-    if (!config) {
+    const result = runInTransaction(() => {
+      if (!statements.getConfig.get(configId)) return { status: 404 } as const;
+
+      const sequences = statements.getSequencesByConfig.all(configId) as { sequenceId: string; name: string }[];
+      if (sequences.length > 0) return { status: 409, sequences } as const;
+
+      statements.deleteConfig.run(configId);
+      return { status: 200 } as const;
+    });
+
+    if (result.status === 404) {
       res.status(404).json({ error: 'Configuration not found' });
       return;
     }
-
-    statements.deleteConfig.run(configId);
+    if (result.status === 409) {
+      const names = result.sequences.map(sequence => JSON.stringify(sequence.name)).join(', ');
+      res.status(409).json({
+        error: `Configuration is used by saved session sequences: ${names}. Remove its entries from those sequences or delete those sequences before deleting this configuration.`,
+        sequences: result.sequences,
+      });
+      return;
+    }
     
     res.json({ message: 'Configuration deleted successfully' });
   } catch (error) {
