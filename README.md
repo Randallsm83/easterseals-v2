@@ -111,9 +111,29 @@ Closing, reloading, or navigating away from an active participant runner stops t
 
 Completed runs stay completed when reopened. Interrupted runs retain completed sessions and already saved partial responses, without fabricating a session ending or a time/money-limit reason. Responses that never reached storage cannot be recovered. For further participation, return to **Session Sequences** and deliberately launch a new run with the participant ID; this creates separate records and leaves the interrupted run unchanged.
 
-Sequence work is **unreleased**. Ordered run history ([#60](https://github.com/Randallsm83/easterseals-v2/issues/60)) remains separate work; do not release the partial sequence feature.
+### Review sequence run results
+
+1. Open **Sequence Runs** to find persisted runs by participant, frozen sequence name, run ID, and lifecycle status. This history remains available after the reusable setup is deleted.
+2. Open a run to inspect its conditions in launch order. Repeated configurations occupy separate numbered positions with distinct session IDs. **Planned** means participation never started; **Active**, **Completed**, and **Interrupted** describe the saved state of each started session.
+3. Open a started session's **Analytics** link for its existing individual results. Conditions and response classification use the configuration frozen at launch, not later source edits. Interrupted sessions retain saved partial responses without inventing an end event or limit reason.
+4. Select two to five started sessions and choose **Compare selected sessions**. The existing comparison keeps independent session-relative timelines and its **Active Time** / **Wall Clock** controls. Planned conditions cannot be selected. No sequence-wide charts or aggregate statistics are added.
+
+History is read-only: viewing results does not open or resume the participant apparatus. Status is the last persisted state, not a new abandonment detector. Historical run references continue protecting source configurations and constituent sessions from deletion.
+
+Sequence work is **unreleased**; deployment remains a separate step.
 
 ## Unreleased
+
+### Ordered sequence run results (#60)
+
+- Added researcher run history and ordered detail views with frozen identifying context, persisted lifecycle states, and separate records for repeated conditions.
+- Linked started sessions to existing analytics and comparison while excluding planned conditions and preserving the five-session comparison limit and time bases.
+- Preserved completed and partial results after setup deletion. Comparison now uses the last saved response balance when no end event exists.
+- Added real browser/API/isolated-SQLite coverage for frozen repeated conditions, retained completed and interrupted data, standalone compatibility, active/wall-clock results, comparison selection limits, and clearing an in-flight comparison.
+
+Local verification: all 67 browser/API regression tests passed. Workspace, explicit client application, and strict test-source typechecks, lint, and production builds passed. An observed researcher browser smoke opened retained run history after setup deletion, inspected frozen individual analytics, and compared completed and partial sessions with the saved response balance. Production fallback generation was exercised against the isolated API for history, retained run details, and individual analytics.
+
+No push or deployment was performed. Physical gamepad hardware was not exercised by this read-only results change. The production build retains its Browserslist freshness and bundle-size warnings.
 
 ### Abandoned sequence runs (#59)
 

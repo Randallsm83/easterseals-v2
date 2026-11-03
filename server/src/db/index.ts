@@ -258,6 +258,10 @@ function createStatements() {
     `),
 
     // Frozen sequence runs retain their setup identity after setup deletion.
+    getAllSequenceRuns: db.prepare(`
+      SELECT * FROM sequence_runs ORDER BY julianday(createdAt) DESC, runId ASC
+    `),
+
     getSequenceRun: db.prepare(`
       SELECT * FROM sequence_runs WHERE runId = ?
     `),

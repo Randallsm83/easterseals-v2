@@ -5,6 +5,7 @@ const staticRoutes = [
   'participants',
   'configurations',
   'sequences',
+  'sequence-history',
   'config/new',
   'analytics',
   'monitor',
@@ -22,9 +23,10 @@ if (!existsSync(indexPath)) {
 const routes = new Set(staticRoutes);
 
 if (apiBaseUrl) {
-  const [sessionsResponse, configurationsResponse] = await Promise.all([
+  const [sessionsResponse, configurationsResponse, runsResponse] = await Promise.all([
     fetch(`${apiBaseUrl}/sessions`),
     fetch(`${apiBaseUrl}/configurations`),
+    fetch(`${apiBaseUrl}/sequence-runs`),
   ]);
 
   if (!sessionsResponse.ok) {
@@ -35,8 +37,13 @@ if (apiBaseUrl) {
     throw new Error(`Failed to fetch configurations: ${configurationsResponse.status} ${configurationsResponse.statusText}`);
   }
 
+  if (!runsResponse.ok) {
+    throw new Error(`Failed to fetch sequence runs: ${runsResponse.status} ${runsResponse.statusText}`);
+  }
+
   const sessions = await sessionsResponse.json();
   const configurations = await configurationsResponse.json();
+  const runs = await runsResponse.json();
 
   for (const session of sessions) {
     const sessionId = String(session.sessionId || '');
@@ -52,6 +59,12 @@ if (apiBaseUrl) {
     routes.add(`start/${configId}`);
     routes.add(`config/${configId}/edit`);
     routes.add(`config/${configId}/sessions`);
+  }
+
+  for (const run of runs) {
+    const runId = String(run.runId || '');
+    if (!runId || runId.includes('/')) continue;
+    routes.add(`sequence-history/${runId}`);
   }
 }
 

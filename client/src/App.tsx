@@ -3,6 +3,8 @@ import { Home } from './pages/Home';
 import { ConfigurationSetup } from './pages/ConfigurationSetup';
 import { Configurations } from './pages/Configurations';
 import { SessionSequences } from './pages/SessionSequences';
+import { SequenceRunHistory } from './pages/SequenceRunHistory';
+import { SequenceRunDetail } from './pages/SequenceRunDetail';
 import { Participants } from './pages/Participants';
 import { StartSession } from './pages/StartSession';
 import { Session } from './pages/Session';
@@ -46,6 +48,12 @@ function App() {
                   className="text-sm font-medium hover:underline"
                 >
                   Session Sequences
+                </Link>
+                <Link
+                  to="/sequence-history"
+                  className="text-sm font-medium hover:underline"
+                >
+                  Sequence Runs
                 </Link>
                 <Link
                   to="/analytics"
@@ -92,6 +100,8 @@ function App() {
             <Route path="/participants" element={<Participants />} />
             <Route path="/configurations" element={<Configurations />} />
             <Route path="/sequences" element={<SessionSequences />} />
+            <Route path="/sequence-history" element={<SequenceRunHistory />} />
+            <Route path="/sequence-history/:runId" element={<SequenceRunDetail />} />
             <Route path="/config/new" element={<ConfigurationSetup />} />
             <Route path="/config/:configId/edit" element={<ConfigurationSetup />} />
             <Route path="/start/:configId" element={<StartSession />} />

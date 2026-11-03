@@ -165,6 +165,7 @@ Persistence adds `session_sequences` and `session_sequence_entries`; `(sequenceI
 
 ### Sequence runs
 - `POST /api/sequences/:sequenceId/runs` - Launch a saved sequence with `{ participantId }`; returns `201` with the frozen run
+- `GET /api/sequence-runs` - List persisted run metadata, newest first, independent of whether the reusable setup still exists
 - `GET /api/sequence-runs/:runId` - Read the run, ordered membership, frozen conditions, and saved balance
 - `POST /api/sequence-runs/:runId/interrupt` - Mark a running run interrupted; completed/interrupted runs remain unchanged
 
@@ -181,6 +182,8 @@ Session-data retrieval uses frozen conditions for run members. Session lists add
 The participant route is `/sequence-runs/:runId`. Its owner-scoped runner preloads frozen conditions, drains accepted writes before completion, and resets session-local state before activating the next condition. A write failure stops participation; a failed interruption request is disclosed rather than presented as persisted. Route cleanup and `pagehide` retire the owned runtime synchronously and attempt interruption with fetch `keepalive`. Re-entry checks persisted starts/position and awaits interruption for an already-started running run; a concurrent final completion remains completed. Passive `GET` inspection does not interrupt participation. A restored browser document reloads to recheck persisted state instead of reviving timers or input. If an exit request never reaches storage, the last saved status may remain running until participant re-entry; this is not a heartbeat/recovery subsystem. Ordered run history belongs to #60. Keep sequence work local and unreleased until the complete feature is ready.
 
 Run-member sessions are rejected by the standalone `/session/:sessionId` runner before any start event is written. Mixed standalone SQLite timestamps and sequence ISO timestamps are compared chronologically for history ordering and participant last-session dates, without rewriting stored history.
+
+Researcher history lives at `/sequence-history`, with read-only ordered details at `/sequence-history/:runId`. These routes do not mount the participant runner. Started sessions link to individual frozen analytics; planned entries have no result or comparison actions. Selecting two to five started sessions opens `/compare` with a participant filter and repeated `sessionId` query parameters, keeping retained older sessions reachable without expanding the existing comparison limit. Partial-session comparison uses the latest saved response balance when no end event exists. Timelines remain relative to each individual session; no aggregate model is introduced.
 
 ### Participants
 - `GET /api/participants` - List participants
@@ -207,6 +210,9 @@ npm test -- tests/session-sequences.spec.ts
 
 # Focused frozen-run persistence and participant execution scenarios
 npm test -- tests/sequence-runs-api.spec.ts tests/sequence-runs.spec.ts
+
+# Focused retained history, frozen analytics, and individual comparison scenarios
+npm test -- tests/sequence-history.spec.ts
 ```
 
 Tests start their own Express and Vite processes on temporary loopback ports, use an isolated temporary SQLite file through `DATABASE_PATH`, and remove it after those processes stop. The default application database remains `server/data/easterseals.db`. Do not point these fixtures at research data.

@@ -1,5 +1,5 @@
-import { useEffect, useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useRef, useState, useMemo } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   LineChart,
   Line,
@@ -48,30 +48,64 @@ interface SessionSummary {
 }
 
 export function SessionComparison() {
+  const [searchParams] = useSearchParams();
+  const queryParticipantId = searchParams.get('participantId') ?? '';
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [loadedSessions, setLoadedSessions] = useState<SessionSummary[]>([]);
   const [loading, setLoading] = useState(false);
-  const [participantFilter, setParticipantFilter] = useState('');
+  const [participantFilter, setParticipantFilter] = useState(queryParticipantId);
   const [timeBasis, setTimeBasis] = useState<'wall' | 'active'>('active');
+  const [loadingSessions, setLoadingSessions] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const pendingQuerySelection = useRef(true);
+  const comparisonRequest = useRef(0);
 
   useEffect(() => {
     api.getParticipants().then(setParticipants).catch(console.error);
   }, []);
 
   useEffect(() => {
+    pendingQuerySelection.current = true;
+    comparisonRequest.current += 1;
+    setParticipantFilter(queryParticipantId);
+    setSelectedIds([]);
+    setLoadedSessions([]);
+    setLoading(false);
+  }, [searchParams, queryParticipantId]);
+
+  useEffect(() => {
+    const selectFromQuery = pendingQuerySelection.current;
+    if (selectFromQuery && participantFilter !== queryParticipantId) return;
+    let cancelled = false;
+    setLoadingSessions(true);
+    setSessions([]);
+    setError(null);
     async function load() {
-      let data: SessionListItem[];
-      if (participantFilter) {
-        data = (await api.getParticipantSessions(participantFilter)).filter(session => session.sequenceStatus !== 'planned');
-      } else {
-        data = (await api.getSessions()).filter(session => session.sequenceStatus !== 'planned').slice(0, 100);
-      }
+      const allSessions = participantFilter
+        ? await api.getParticipantSessions(participantFilter)
+        : await api.getSessions();
+      const startedSessions = allSessions.filter(session => session.sequenceStatus !== 'planned');
+      const data = participantFilter ? startedSessions : startedSessions.slice(0, 100);
+      if (cancelled) return;
       setSessions(data);
+      if (selectFromQuery) {
+        const validIds = new Set(data.map(session => session.sessionId));
+        const requestedIds = [...new Set(searchParams.getAll('sessionId'))];
+        setSelectedIds(requestedIds.filter(id => validIds.has(id)).slice(0, 5));
+        pendingQuerySelection.current = false;
+      }
     }
-    load().catch(console.error);
-  }, [participantFilter]);
+    load()
+      .catch(cause => {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : 'Failed to load sessions.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingSessions(false);
+      });
+    return () => { cancelled = true; };
+  }, [participantFilter, queryParticipantId, searchParams]);
 
   function toggleSession(sessionId: string) {
     setSelectedIds((prev) => {
@@ -83,9 +117,12 @@ export function SessionComparison() {
 
   async function handleCompare() {
     if (selectedIds.length < 2) return;
+    const requestId = ++comparisonRequest.current;
     setLoading(true);
+    setError(null);
     try {
       const results = await Promise.all(selectedIds.map((id) => api.getSessionData(id)));
+      if (requestId !== comparisonRequest.current) return;
       const summaries: SessionSummary[] = results.map((data, i) => {
         const sessionId = selectedIds[i];
         const color = COMPARISON_PALETTE[i % COMPARISON_PALETTE.length];
@@ -124,10 +161,10 @@ export function SessionComparison() {
         const rpmWall = responsesPerMinute(totalClicks, duration);
         const rpmActive = responsesPerMinute(totalClicks, activeDuration);
 
-        let finalMoney: number = data.startEvent?.value?.moneyCounter ?? 0;
-        if (data.endEvent?.value?.moneyCounter !== undefined) {
-          finalMoney = data.endEvent.value.moneyCounter;
-        }
+        const finalMoney = data.endEvent?.value?.moneyCounter
+          ?? data.allClicks[data.allClicks.length - 1]?.sessionInfo?.moneyCounter
+          ?? data.startEvent.value.moneyCounter
+          ?? 0;
 
         // Build timelines
         const moneyTimeline: { t: number; tActive: number; money: number }[] = [];
@@ -160,9 +197,11 @@ export function SessionComparison() {
       });
       setLoadedSessions(summaries);
     } catch (err) {
+      if (requestId !== comparisonRequest.current) return;
       console.error('Failed to load session data:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load session data.');
     } finally {
-      setLoading(false);
+      if (requestId === comparisonRequest.current) setLoading(false);
     }
   }
 
@@ -215,6 +254,12 @@ export function SessionComparison() {
         <p className="text-muted-foreground mt-2">Compare up to 5 sessions side by side</p>
       </div>
 
+      {error && (
+        <p role="alert" className="rounded-lg border border-destructive bg-destructive/10 p-4 text-destructive">
+          {error}
+        </p>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Select Sessions</CardTitle>
@@ -224,13 +269,20 @@ export function SessionComparison() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium">Filter by Participant</label>
+            <label htmlFor="comparison-participant" className="text-sm font-medium">Filter by Participant</label>
             <select
+              id="comparison-participant"
               value={participantFilter}
-              onChange={(e) => setParticipantFilter(e.target.value)}
+              onChange={(e) => {
+                pendingQuerySelection.current = false;
+                setParticipantFilter(e.target.value);
+              }}
               className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
             >
               <option value="">All participants</option>
+              {participantFilter && !participants.some(participant => participant.participantId === participantFilter) && (
+                <option value={participantFilter}>{participantFilter}</option>
+              )}
               {participants.map((p) => (
                 <option key={p.participantId} value={p.participantId}>
                   {p.participantId} ({p.sessionCount} sessions)
@@ -240,7 +292,9 @@ export function SessionComparison() {
           </div>
 
           <div className="rounded-lg border border-border overflow-hidden max-h-64 overflow-y-auto">
-            {sessions.length === 0 ? (
+            {loadingSessions ? (
+              <p className="text-muted-foreground text-sm p-4">Loading sessions...</p>
+            ) : sessions.length === 0 ? (
               <p className="text-muted-foreground text-sm p-4">No sessions found</p>
             ) : (
               sessions.map((session) => {
@@ -254,6 +308,7 @@ export function SessionComparison() {
                   >
                     <input
                       type="checkbox"
+                      aria-label={`Compare ${session.sessionId}`}
                       checked={selected}
                       onChange={() => toggleSession(session.sessionId)}
                       disabled={!selected && selectedIds.length >= 5}
@@ -294,12 +349,17 @@ export function SessionComparison() {
             </div>
             <Button
               onClick={handleCompare}
-              disabled={selectedIds.length < 2 || loading}
+              disabled={selectedIds.length < 2 || loading || loadingSessions}
             >
               {loading ? 'Loading...' : `Compare ${selectedIds.length} Session${selectedIds.length !== 1 ? 's' : ''}`}
             </Button>
             {selectedIds.length > 0 && (
-              <Button variant="outline" onClick={() => { setSelectedIds([]); setLoadedSessions([]); }}>
+              <Button variant="outline" onClick={() => {
+                comparisonRequest.current += 1;
+                setSelectedIds([]);
+                setLoadedSessions([]);
+                setLoading(false);
+              }}>
                 Clear
               </Button>
             )}

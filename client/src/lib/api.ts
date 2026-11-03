@@ -113,6 +113,10 @@ class ApiClient {
     });
   }
 
+  async getSequenceRuns(): Promise<Omit<SequenceRun, 'entries'>[]> {
+    return this.request<Omit<SequenceRun, 'entries'>[]>('/sequence-runs');
+  }
+
   async getSequenceRun(runId: string): Promise<SequenceRun> {
     return this.request<SequenceRun>(`/sequence-runs/${runId}`);
   }

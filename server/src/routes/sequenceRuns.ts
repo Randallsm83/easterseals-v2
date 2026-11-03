@@ -16,6 +16,15 @@ router.param('runId', (_req, res, next, value: string) => {
   next();
 });
 
+router.get('/', (_req, res) => {
+  try {
+    res.json(statements.getAllSequenceRuns.all());
+  } catch (error) {
+    console.error('Error fetching sequence runs:', error);
+    res.status(500).json({ error: 'Failed to fetch sequence runs' });
+  }
+});
+
 router.get('/:runId', (req, res) => {
   try {
     const run = readSequenceRun(req.params.runId);
