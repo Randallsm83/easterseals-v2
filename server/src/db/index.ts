@@ -92,6 +92,35 @@ export function initializeDatabase() {
       updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (sessionId) REFERENCES sessions(sessionId) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS sequence_runs (
+      runId TEXT PRIMARY KEY,
+      sequenceId TEXT NOT NULL,
+      sequenceName TEXT NOT NULL,
+      participantId TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('running', 'completed', 'interrupted')),
+      currentPosition INTEGER NOT NULL DEFAULT 0 CHECK (currentPosition >= 0),
+      sequenceBalance INTEGER NOT NULL CHECK (sequenceBalance >= 0 AND sequenceBalance <= 9007199254740991),
+      createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      endedAt DATETIME,
+      CHECK ((status = 'running' AND endedAt IS NULL) OR (status <> 'running' AND endedAt IS NOT NULL))
+    );
+
+    CREATE TABLE IF NOT EXISTS sequence_run_entries (
+      runId TEXT NOT NULL,
+      position INTEGER NOT NULL CHECK (position >= 0),
+      sessionId TEXT NOT NULL UNIQUE,
+      configId TEXT NOT NULL,
+      configName TEXT NOT NULL,
+      config TEXT NOT NULL CHECK (json_valid(config) AND json_type(config) = 'object'),
+      PRIMARY KEY (runId, position),
+      FOREIGN KEY (runId) REFERENCES sequence_runs(runId) ON DELETE RESTRICT,
+      FOREIGN KEY (sessionId) REFERENCES sessions(sessionId) ON DELETE RESTRICT,
+      FOREIGN KEY (configId) REFERENCES configurations(configId) ON DELETE RESTRICT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sequence_run_entries_configId
+      ON sequence_run_entries(configId);
   `);
 
   console.log('\u2713 Database tables created');
@@ -117,6 +146,24 @@ function runMigrations() {
 }
 
 function createStatements() {
+  const sessionColumns = `
+    s.*, COALESCE(e.configName, c.name) AS configName,
+      e.runId AS sequenceRunId, e.position AS sequencePosition,
+      CASE
+        WHEN e.runId IS NULL THEN NULL
+        WHEN s.endedAt IS NOT NULL THEN 'completed'
+        WHEN s.startedAt IS NULL THEN 'planned'
+        WHEN r.status = 'interrupted' THEN 'interrupted'
+        ELSE 'active'
+      END AS sequenceStatus
+  `;
+  const sessionFrom = `
+    FROM sessions s
+    JOIN configurations c ON s.configId = c.configId
+    LEFT JOIN sequence_run_entries e ON s.sessionId = e.sessionId
+    LEFT JOIN sequence_runs r ON e.runId = r.runId
+  `;
+  const sessionQuery = `SELECT ${sessionColumns} ${sessionFrom}`;
   return {
     // Configurations
     getConfig: db.prepare(`
@@ -210,27 +257,67 @@ function createStatements() {
       DELETE FROM session_sequences WHERE sequenceId = ?
     `),
 
+    // Frozen sequence runs retain their setup identity after setup deletion.
+    getSequenceRun: db.prepare(`
+      SELECT * FROM sequence_runs WHERE runId = ?
+    `),
+
+    getSequenceRunEntries: db.prepare(`
+      SELECT e.position, e.sessionId, e.configId, e.configName, e.config, s.startedAt, s.endedAt
+      FROM sequence_run_entries e
+      JOIN sessions s ON s.sessionId = e.sessionId
+      WHERE e.runId = ? ORDER BY e.position ASC
+    `),
+
+    getSequenceRunMember: db.prepare(`
+      SELECT e.runId, e.position, s.startedAt, r.status, r.currentPosition, r.sequenceBalance
+      FROM sequence_run_entries e
+      JOIN sessions s ON s.sessionId = e.sessionId
+      JOIN sequence_runs r ON r.runId = e.runId
+      WHERE e.sessionId = ?
+    `),
+
+    getSequenceRunsByConfig: db.prepare(`
+      SELECT DISTINCT r.runId, r.sequenceId, r.sequenceName
+      FROM sequence_runs r
+      JOIN sequence_run_entries e ON r.runId = e.runId
+      WHERE e.configId = ?
+      ORDER BY r.createdAt ASC, r.runId ASC
+    `),
+
+    insertSequenceRun: db.prepare(`
+      INSERT INTO sequence_runs (runId, sequenceId, sequenceName, participantId, sequenceBalance)
+      VALUES (?, ?, ?, ?, ?)
+    `),
+
+    insertSequenceRunEntry: db.prepare(`
+      INSERT INTO sequence_run_entries (runId, position, sessionId, configId, configName, config)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `),
+
+    addSequenceRunReward: db.prepare(`
+      UPDATE sequence_runs SET sequenceBalance = sequenceBalance + ? WHERE runId = ?
+    `),
+
+    advanceSequenceRun: db.prepare(`
+      UPDATE sequence_runs SET currentPosition = ?, status = ?, endedAt = ? WHERE runId = ?
+    `),
+
+    interruptSequenceRun: db.prepare(`
+      UPDATE sequence_runs SET status = 'interrupted', endedAt = ?
+      WHERE runId = ? AND status = 'running'
+    `),
+
     // Sessions
     getSession: db.prepare(`
-      SELECT s.*, c.config 
-      FROM sessions s
-      JOIN configurations c ON s.configId = c.configId
-      WHERE s.sessionId = ?
+      SELECT ${sessionColumns}, COALESCE(e.config, c.config) AS config
+      ${sessionFrom} WHERE s.sessionId = ?
     `),
 
-    getAllSessions: db.prepare(`
-      SELECT s.*, c.name as configName
-      FROM sessions s
-      JOIN configurations c ON s.configId = c.configId
-      ORDER BY s.startedAt DESC
-    `),
+    getAllSessions: db.prepare(`${sessionQuery} ORDER BY julianday(s.startedAt) DESC, s.sessionId ASC`),
 
     getSessionsByParticipant: db.prepare(`
-      SELECT s.*, c.name as configName
-      FROM sessions s
-      JOIN configurations c ON s.configId = c.configId
-      WHERE s.participantId = ?
-      ORDER BY s.startedAt DESC
+      ${sessionQuery} WHERE s.participantId = ? ORDER BY julianday(s.startedAt) DESC, s.sessionId ASC
     `),
 
     getDistinctParticipants: db.prepare(`
@@ -241,7 +328,7 @@ function createStatements() {
       SELECT 
         s.participantId,
         COUNT(*) as sessionCount,
-        MAX(s.startedAt) as lastSessionDate,
+        MAX(strftime('%Y-%m-%dT%H:%M:%fZ', s.startedAt)) as lastSessionDate,
         CASE WHEN ap.participantId IS NOT NULL THEN 1 ELSE 0 END as isArchived
       FROM sessions s
       LEFT JOIN archived_participants ap ON s.participantId = ap.participantId
@@ -254,7 +341,7 @@ function createStatements() {
       SELECT 
         s.participantId,
         COUNT(*) as sessionCount,
-        MAX(s.startedAt) as lastSessionDate,
+        MAX(strftime('%Y-%m-%dT%H:%M:%fZ', s.startedAt)) as lastSessionDate,
         1 as isArchived
       FROM sessions s
       INNER JOIN archived_participants ap ON s.participantId = ap.participantId
@@ -281,11 +368,19 @@ function createStatements() {
     `),
 
     getSessionsByConfig: db.prepare(`
-      SELECT * FROM sessions WHERE configId = ? ORDER BY startedAt DESC
+      ${sessionQuery} WHERE s.configId = ? ORDER BY julianday(s.startedAt) DESC, s.sessionId ASC
     `),
 
     insertSession: db.prepare(`
       INSERT INTO sessions (sessionId, participantId, configId) VALUES (?, ?, ?)
+    `),
+
+    insertPlannedSession: db.prepare(`
+      INSERT INTO sessions (sessionId, participantId, configId, startedAt) VALUES (?, ?, ?, NULL)
+    `),
+
+    updateSessionStart: db.prepare(`
+      UPDATE sessions SET startedAt = ? WHERE sessionId = ?
     `),
 
     updateSessionEnd: db.prepare(`
@@ -364,6 +459,13 @@ function createStatements() {
 export function runInTransaction<T>(fn: () => T): T {
   const transaction = db.transaction(fn);
   return transaction();
+}
+
+export function getNextSessionId(participantId: string): string {
+  const { sessionCount } = statements.getMaxSessionIdForParticipant.get(participantId) as { sessionCount: number };
+  let number = sessionCount + 1;
+  while (statements.getSession.get(`${participantId}-${number}`)) number += 1;
+  return `${participantId}-${number}`;
 }
 
 // Cleanup

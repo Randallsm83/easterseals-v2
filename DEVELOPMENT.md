@@ -150,7 +150,7 @@ The runner timestamps and snapshots events when accepted, then saves them in acc
 - `PUT /api/configurations/:id` - Update configuration
 - `POST /api/configurations/:id/archive` - Archive
 - `POST /api/configurations/:id/unarchive` - Unarchive
-- `DELETE /api/configurations/:id` - Delete configuration, returning `409` if a saved session sequence references it
+- `DELETE /api/configurations/:id` - Delete configuration, returning `409` if a saved session sequence or any sequence run references it
 
 ### Session sequences
 - `GET /api/sequences` - List reusable sequence setups with ordered configuration IDs
@@ -161,7 +161,26 @@ The runner timestamps and snapshots events when accepted, then saves them in acc
 
 Create/update return `{ sequenceId, name, configIds, createdAt }`. Names are trimmed, required, and limited to 200 characters. `configIds` must be a nonempty ordered array of existing saved configuration IDs, each 1–100 characters; repeats and archived configurations are allowed. Invalid submissions return `400`; missing setups return `404`. Create/update are transactional. Referenced configuration deletion returns `409` with the referencing sequence names/IDs, while configuration editing remains allowed.
 
-Persistence adds `session_sequences` and `session_sequence_entries`; `(sequenceId, position)` distinguishes repeated entries. Entry references restrict configuration deletion, and deleting a sequence cascades only to its setup entries. Existing standalone configurations, sessions, and events are not rewritten. Sequence execution is separate work.
+Persistence adds `session_sequences` and `session_sequence_entries`; `(sequenceId, position)` distinguishes repeated entries. Entry references restrict configuration deletion, and deleting a sequence cascades only to its setup entries. Existing standalone configurations, sessions, and events are not rewritten.
+
+### Sequence runs
+- `POST /api/sequences/:sequenceId/runs` - Launch a saved sequence with `{ participantId }`; returns `201` with the frozen run
+- `GET /api/sequence-runs/:runId` - Read the run, ordered membership, frozen conditions, and saved balance
+- `POST /api/sequence-runs/:runId/interrupt` - Mark a running run interrupted; completed/interrupted runs remain unchanged
+
+A run contains `runId`, original `sequenceId`/`sequenceName`, `participantId`, `status` (`running`, `completed`, or `interrupted`), zero-based `currentPosition`, integer-cent `sequenceBalance`, `createdAt`, `endedAt`, and ordered `entries`. Each entry contains `position`, `sessionId`, `configId`, frozen `configName` and configuration object, and nullable `startedAt`/`endedAt`.
+
+Launch validates the entire sequence before inserting anything, then freezes all entries and prepares distinct sessions in one transaction. Prepared sessions have `startedAt: null`; only an accepted `start` event sets their actual start time. Only the current entry of a running run can start or accept responses. Duplicate starts, writes before start, out-of-order writes, and writes after termination return `409`.
+
+An accepted run click inserts its event and increments `sequenceBalance` by its validated `awardedCents` in the same transaction. The initial balance is the first frozen starting balance; later starting balances and submitted end snapshots do not add rewards. For run sessions, the existing completion endpoint atomically records `end`, session `endedAt`, next position, and final run status, returning `{ message, run }`. The next session remains planned until its own start event. Standalone completion still returns `{ message }`.
+
+Session-data retrieval uses frozen conditions for run members. Session lists add `sequenceRunId`, `sequencePosition`, and `sequenceStatus` (`planned`, `active`, `completed`, or `interrupted`) for those members; planned entries are not active sessions. Existing per-session SSE snapshots expose that metadata and emit interruption only after a saved interruption.
+
+`sequence_runs` retains setup identity without a cascading setup reference. `sequence_run_entries` stores immutable conditions and restricts configuration and constituent-session deletion. Deleting a reusable setup never deletes run records, even after completion or interruption. The schema expansion creates these tables without rewriting standalone history.
+
+The participant route is `/sequence-runs/:runId`. Its owner-scoped runner preloads frozen conditions, drains accepted writes before completion, and resets session-local state before activating the next condition. A write failure stops participation; a failed interruption request is disclosed rather than presented as persisted. Abandonment/re-entry recognition and a dedicated run-history UI belong to #59 and #60, not this slice. Keep sequence work local and unreleased until the complete feature is ready.
+
+Run-member sessions are rejected by the standalone `/session/:sessionId` runner before any start event is written. Mixed standalone SQLite timestamps and sequence ISO timestamps are compared chronologically for history ordering and participant last-session dates, without rewriting stored history.
 
 ### Participants
 - `GET /api/participants` - List participants
@@ -185,11 +204,14 @@ npm test -- tests/session-completion-api.spec.ts
 
 # Focused reusable-sequence authoring and deletion-protection scenarios
 npm test -- tests/session-sequences.spec.ts
+
+# Focused frozen-run persistence and participant execution scenarios
+npm test -- tests/sequence-runs-api.spec.ts tests/sequence-runs.spec.ts
 ```
 
 Tests start their own Express and Vite processes on temporary loopback ports, use an isolated temporary SQLite file through `DATABASE_PATH`, and remove it after those processes stop. The default application database remains `server/data/easterseals.db`. Do not point these fixtures at research data.
 
-HTTP write delays/failures exercise the actual runner; API outcomes use the real database. A temporary SQLite trigger proves that a completion update failure rolls back the preceding end-event insert. Timing scenarios use a controlled browser clock. No physical gamepad verification is implied by simulated keyboard/browser coverage.
+HTTP write delays/failures exercise the actual runner; API outcomes use the real database. Temporary SQLite triggers prove launch, completion, and click/balance updates roll back atomically. Timing scenarios use a controlled browser clock. Sequence tests cover ordered frozen repeats, both ending modes, continuation, money visibility, state resets, held-key and simulated gamepad release, planned/interrupted labels, and final inactivity. No physical gamepad verification is implied by simulated input coverage.
 
 If Node 24 aborts inside `RemoveEnvironmentCleanupHook` while collecting native SQLite statements, see [nodejs/node#65446](https://github.com/nodejs/node/issues/65446). The documented workaround is rebuilding the addon with compatible headers from before Node 24.19; reinstalling with affected headers can reintroduce the crash. This is a native runtime issue, not a reason to add test retries.
 

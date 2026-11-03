@@ -16,7 +16,7 @@ import { api } from '../lib/api';
 import type { Participant, SessionListItem, SessionDataResponse, RawStoredConfig } from '../types';
 import { normalizeConfig } from '../lib/normalizeConfig';
 import { buildActiveTimeline } from '../lib/activeTime';
-import { parseSqliteDate, formatTimestamp, formatDuration, responsesPerMinute } from '../lib/utils';
+import { parseSqliteDate, formatTimestamp, formatSessionStatus, formatDuration, responsesPerMinute } from '../lib/utils';
 
 const COMPARISON_PALETTE = [
   '#5ccc96', '#e39400', '#00a3cc', '#b3a1e6', '#ce6f8f', '#42b3c2', '#f2ce00',
@@ -64,10 +64,9 @@ export function SessionComparison() {
     async function load() {
       let data: SessionListItem[];
       if (participantFilter) {
-        data = await api.getParticipantSessions(participantFilter);
+        data = (await api.getParticipantSessions(participantFilter)).filter(session => session.sequenceStatus !== 'planned');
       } else {
-        // getSessions returns all sessions
-        data = (await api.getSessions()).slice(0, 100); // cap at 100
+        data = (await api.getSessions()).filter(session => session.sequenceStatus !== 'planned').slice(0, 100);
       }
       setSessions(data);
     }
@@ -267,6 +266,9 @@ export function SessionComparison() {
                     <span className="text-xs text-muted-foreground">
                       {session.startedAt ? formatTimestamp(session.startedAt) : '—'}
                     </span>
+                    {session.sequenceStatus && (
+                      <span className="text-xs text-muted-foreground">{formatSessionStatus(session)}</span>
+                    )}
                     <span className="text-xs text-muted-foreground">
                       {session.totalClicks} clicks
                     </span>

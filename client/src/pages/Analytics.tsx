@@ -15,7 +15,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../co
 import { Button } from '../components/ui/button';
 import { api } from '../lib/api';
 import type { SessionDataResponse, SessionListItem, ChartDataPoint, ButtonPosition, Participant, ButtonShape, RawStoredConfig } from '../types';
-import { calculateAccuracy, formatDuration, parseSqliteDate, formatTimestamp, responsesPerMinute } from '../lib/utils';
+import { calculateAccuracy, formatDuration, parseSqliteDate, formatTimestamp, formatSessionStatus, responsesPerMinute } from '../lib/utils';
 import { normalizeConfig } from '../lib/normalizeConfig';
 import { formatRewardScheduleLabel, formatRewardScheduleSummary } from '../lib/rewardSchedules';
 import { buildActiveTimeline } from '../lib/activeTime';
@@ -135,7 +135,7 @@ export function Analytics() {
   async function loadParticipantSessions(participantId: string) {
     if (!participantId) { setParticipantSessions([]); return; }
     try {
-      const data = await api.getParticipantSessions(participantId);
+      const data = (await api.getParticipantSessions(participantId)).filter(session => session.sequenceStatus !== 'planned');
       setParticipantSessions(data);
       if (data.length > 0 && !urlSessionId) {
         setSelectedSessionId(data[0].sessionId);
@@ -331,7 +331,7 @@ export function Analytics() {
     // Determine the reason the session ended (or report that it's still running).
     let endReason: string;
     if (!sessionData.endEvent) {
-      endReason = 'In Progress';
+      endReason = sessionData.sequenceStatus === 'interrupted' ? 'Interrupted' : 'In Progress';
     } else {
       const v = sessionData.endEvent.value as {
         timeLimitReached?: boolean;
@@ -550,7 +550,7 @@ export function Analytics() {
                 <option value="">Select a session...</option>
                 {participantSessions.map((session) => (
                   <option key={session.sessionId} value={session.sessionId}>
-                    {getSessionNumber(session.sessionId)} - {session.startedAt ? formatTimestamp(session.startedAt) : 'N/A'}
+                    {getSessionNumber(session.sessionId)} - {session.startedAt ? formatTimestamp(session.startedAt) : 'N/A'}{session.sequenceStatus ? ` — ${formatSessionStatus(session)}` : ''}
                   </option>
                 ))}
               </select>

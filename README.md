@@ -95,11 +95,30 @@ easterseals-v2/
 5. Reopen a saved setup with **Edit** to rename it or change its entries. Saved changes survive page reload. **Cancel** discards the current draft.
 6. Choose **Delete** and confirm to remove an obsolete setup. Its configurations and recorded sessions remain intact.
 
-Names must contain non-whitespace text and be at most 200 characters; each sequence must contain at least one saved configuration. Failed saves display an error and keep the draft. Configurations referenced by a saved sequence can be edited, but deletion is blocked until every referencing setup releases them.
+Names must contain non-whitespace text and be at most 200 characters; each sequence must contain at least one saved configuration. Failed saves display an error and keep the draft. Configurations referenced by a saved sequence or any sequence run cannot be deleted. Configuration edits remain available and affect future launches only.
 
-This workflow authors reusable setups only. Sequence launch and participant execution are tracked separately in [#58](https://github.com/Randallsm83/easterseals-v2/issues/58); no launch control is included here.
+### Run a session sequence
+
+1. Open **Session Sequences**, choose **Start** on a saved setup, enter one **Participant ID**, and choose **Start Sequence**.
+2. The complete order and configuration contents are frozen at launch. The participant responds on the same apparatus while each condition ends according to its existing time limit, money cap, and continuation setting.
+3. The next condition accepts input only after the previous condition's accepted events and completion have been saved. There are no intermediate setup screens, countdowns, results, or transition messages. Responses during saving are ignored; held physical inputs must be released before they can count in the next condition.
+4. When enabled by the current condition, the money display shows the first starting balance plus rewards earned throughout the run, without a per-session limit denominator. Later starting balances affect only their own session's accounting.
+5. After the final save, the apparatus remains disabled with **Session complete.** Each condition has its own session record and frozen configuration for individual analysis.
+
+A failed write stops participation without retrying or advancing. The runner attempts to mark the run interrupted and explicitly reports if that status could not be saved. Deleting the reusable setup preserves run identity, snapshots, sessions, and events.
+
+Sequence work is **unreleased**. Abandonment/re-entry recognition ([#59](https://github.com/Randallsm83/easterseals-v2/issues/59)) and ordered run history ([#60](https://github.com/Randallsm83/easterseals-v2/issues/60)) remain separate work; do not release the partial sequence feature.
 
 ## Unreleased
+
+### Frozen session sequence execution (#58)
+
+- Added participant launch, immutable ordered conditions, automatic durable transitions, continuous earned balance, and neutral final completion on the disabled apparatus.
+- Reset local reward schedules, counters, limits, pause state, changeover-delay rewards/history, and timers between conditions. Held keys, gamepad buttons, and axes require release before a response in the next condition.
+- Added transactional run lifecycle and reward accounting, frozen session-data retrieval, and historical configuration/session deletion protection. Existing lists and monitoring distinguish planned and interrupted conditions.
+- Added real browser/API/isolated-SQLite coverage for repeated conditions, both ending modes, hidden money, continuation, delayed/failed writes, rollback, retained snapshots, state resets, and simulated physical-input boundaries. Physical controller verification is separate.
+
+Local verification: all 57 browser/API regression tests passed, along with workspace typechecks, strict test-source typechecking, lint, and production builds. A separate observed researcher/participant A → B → A smoke run retained the apparatus and three independent records with the correct earned balance. Standards and spec reviews have no remaining findings. Physical gamepad hardware was not verified.
 
 ### Reusable session sequence authoring (#57)
 

@@ -1,16 +1,17 @@
 import { Router } from 'express';
 import { runInTransaction, statements } from '../db/index.js';
+import { readSequenceRun, sequenceMetadata, sequenceWriteConflict, type SequenceRunMember } from '../db/sequenceRuns.js';
 import { emit, subscribe } from '../live/sessionEmitter.js';
-import { SessionEndEventSchema } from '../types/index.js';
+import { SessionEndEventSchema, type SequenceSessionMetadata } from '../types/index.js';
 import { z } from 'zod';
 
-interface SessionRow {
+interface SessionRow extends SequenceSessionMetadata {
   sessionId: string;
   participantId: string;
   configId: string;
   configName: string;
   config: string;
-  startedAt: string;
+  startedAt: string | null;
   endedAt: string | null;
 }
 
@@ -118,6 +119,7 @@ router.get('/', (_req, res) => {
         configName: session.configName,
         startedAt: session.startedAt,
         endedAt: session.endedAt,
+        ...sequenceMetadata(session),
         totalClicks: clickCount.count,
         duration,
         finalMoney,
@@ -183,6 +185,7 @@ router.get('/:sessionId/data', (req, res) => {
       endEvent,
       allClicks,
       pauseEvents,
+      ...sequenceMetadata(session),
     };
 
     res.json(response);
@@ -247,29 +250,39 @@ router.post('/:sessionId/end', (req, res) => {
     const { sessionId } = req.params;
     const { value } = result.data;
     const timestamp = result.data.timestamp ?? new Date().toISOString();
-    const status = runInTransaction(() => {
+    const saved = runInTransaction(() => {
       const session = statements.getSession.get(sessionId) as SessionRow | undefined;
-      if (!session) return 404;
+      if (!session) return { status: 404, error: 'Session not found' } as const;
       if (session.endedAt !== null || statements.getSessionEventByType.get(sessionId, 'end')) {
-        return 409;
+        return { status: 409, error: 'Session already ended' } as const;
       }
+
+      const member = statements.getSequenceRunMember.get(sessionId) as SequenceRunMember | undefined;
+      const conflict = sequenceWriteConflict(member, 'end');
+      if (conflict) return { status: 409, error: conflict } as const;
+      const run = member ? readSequenceRun(member.runId) : undefined;
+      if (member && !run) throw new Error('Sequence run membership could not be read');
 
       statements.insertEvent.run(sessionId, 'end', JSON.stringify(value), timestamp);
       statements.updateSessionEnd.run(timestamp, sessionId);
-      return 200;
+      if (run && member) {
+        const nextPosition = member.position + 1;
+        const completed = nextPosition === run.entries.length;
+        statements.advanceSequenceRun.run(nextPosition, completed ? 'completed' : 'running', completed ? timestamp : null, run.runId);
+        const updatedRun = readSequenceRun(run.runId);
+        if (!updatedRun) throw new Error('Completed sequence run could not be read');
+        return { status: 200, run: updatedRun } as const;
+      }
+      return { status: 200 } as const;
     });
 
-    if (status === 404) {
-      res.status(404).json({ error: 'Session not found' });
-      return;
-    }
-    if (status === 409) {
-      res.status(409).json({ error: 'Session already ended' });
+    if (saved.status !== 200) {
+      res.status(saved.status).json({ error: saved.error });
       return;
     }
 
     emit(sessionId, { type: 'end', sessionId, timestamp, data: value });
-    res.json({ message: 'Session ended successfully' });
+    res.json({ message: 'Session ended successfully', ...('run' in saved ? { run: saved.run } : {}) });
   } catch (error) {
     console.error('Error ending session:', error);
     res.status(500).json({ error: 'Failed to end session' });
@@ -280,7 +293,7 @@ router.post('/:sessionId/end', (req, res) => {
 router.get('/:sessionId/stream', (req, res) => {
   const { sessionId } = req.params;
 
-  const session = statements.getSession.get(sessionId);
+  const session = statements.getSession.get(sessionId) as SessionRow | undefined;
   if (!session) {
     res.status(404).json({ error: 'Session not found' });
     return;
@@ -313,6 +326,7 @@ router.get('/:sessionId/stream', (req, res) => {
       startTimestamp: startRow?.timestamp ?? null,
       endData: endRow ? JSON.parse(endRow.value) : null,
       endTimestamp: endRow?.timestamp ?? null,
+      ...sequenceMetadata(session),
     },
   });
 
@@ -376,13 +390,20 @@ router.delete('/:sessionId', (req, res) => {
   try {
     const { sessionId } = req.params;
     
-    const session = statements.getSession.get(sessionId);
-    if (!session) {
+    const status = runInTransaction(() => {
+      if (!statements.getSession.get(sessionId)) return 404;
+      if (statements.getSequenceRunMember.get(sessionId)) return 409;
+      statements.deleteSession.run(sessionId);
+      return 200;
+    });
+    if (status === 404) {
       res.status(404).json({ error: 'Session not found' });
       return;
     }
-
-    statements.deleteSession.run(sessionId);
+    if (status === 409) {
+      res.status(409).json({ error: 'Sessions recorded as part of a sequence run cannot be deleted' });
+      return;
+    }
     
     res.json({ message: 'Session deleted successfully' });
   } catch (error) {

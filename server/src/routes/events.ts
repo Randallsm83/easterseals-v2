@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { runInTransaction, statements } from '../db/index.js';
+import { RewardCentsSchema, sequenceWriteConflict, type SequenceRunMember } from '../db/sequenceRuns.js';
 import { emit } from '../live/sessionEmitter.js';
 import { z } from 'zod';
 
@@ -29,23 +30,35 @@ router.post('/', (req, res) => {
     const { sessionId, event, value } = result.data;
     const timestamp = result.data.timestamp || new Date().toISOString();
 
-    const status = runInTransaction(() => {
+    const saved = runInTransaction(() => {
       const session = statements.getSession.get(sessionId) as { endedAt: string | null } | undefined;
-      if (!session) return 404;
+      if (!session) return { status: 404, error: 'Session not found' } as const;
       if (session.endedAt !== null || statements.getSessionEventByType.get(sessionId, 'end')) {
-        return 409;
+        return { status: 409, error: 'Session already ended' } as const;
+      }
+
+      const member = statements.getSequenceRunMember.get(sessionId) as SequenceRunMember | undefined;
+      const conflict = sequenceWriteConflict(member, event);
+      if (conflict) return { status: 409, error: conflict } as const;
+      let awardedCents = 0;
+      if (member && event === 'click') {
+        const reward = RewardCentsSchema.safeParse(value.awardedCents);
+        if (!reward.success) return { status: 400, error: 'Invalid awardedCents for sequence response' } as const;
+        const sequenceBalance = RewardCentsSchema.parse(member.sequenceBalance);
+        if (!Number.isSafeInteger(sequenceBalance + reward.data)) {
+          return { status: 400, error: 'Sequence balance exceeds safe integer cents' } as const;
+        }
+        awardedCents = reward.data;
       }
 
       statements.insertEvent.run(sessionId, event, JSON.stringify(value), timestamp);
-      return 201;
+      if (member && event === 'click') statements.addSequenceRunReward.run(awardedCents, member.runId);
+      if (member && event === 'start') statements.updateSessionStart.run(timestamp, sessionId);
+      return { status: 201 } as const;
     });
 
-    if (status === 404) {
-      res.status(404).json({ error: 'Session not found' });
-      return;
-    }
-    if (status === 409) {
-      res.status(409).json({ error: 'Session already ended' });
+    if (saved.status !== 201) {
+      res.status(saved.status).json({ error: saved.error });
       return;
     }
 

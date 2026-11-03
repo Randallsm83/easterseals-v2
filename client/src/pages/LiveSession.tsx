@@ -4,7 +4,7 @@ import { Input } from '../components/ui/input';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { api } from '../lib/api';
-import type { RawStoredConfig } from '../types';
+import type { RawStoredConfig, SequenceSessionMetadata } from '../types';
 import { normalizeConfig } from '../lib/normalizeConfig';
 import { responsesPerMinute } from '../lib/utils';
 
@@ -18,7 +18,7 @@ interface ClickEntry {
   awardedCents: number;
 }
 
-interface Snapshot {
+interface Snapshot extends SequenceSessionMetadata {
   hasStarted: boolean;
   hasEnded: boolean;
   clickCount: number;
@@ -35,6 +35,7 @@ export function LiveSession() {
   const [connected, setConnected] = useState(false);
   const [sessionEnded, setSessionEnded] = useState(false);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [sequenceStatus, setSequenceStatus] = useState<SequenceSessionMetadata['sequenceStatus']>();
   const [totalClicks, setTotalClicks] = useState(0);
   const [moneyCounter, setMoneyCounter] = useState(0);
   const [lastClick, setLastClick] = useState<ClickEntry | null>(null);
@@ -56,8 +57,11 @@ export function LiveSession() {
   // Load session config for input name/color lookup
   useEffect(() => {
     if (!sessionId) return;
+    let cancelled = false;
     api.getSessionData(sessionId)
       .then((data) => {
+        if (cancelled) return;
+        setSequenceStatus(current => current && current !== 'planned' ? current : data.sequenceStatus);
         const rawCfg = data.sessionConfig as unknown as RawStoredConfig;
         const normalized = normalizeConfig(rawCfg);
         const inputMap: Record<string, { name: string; color?: string; type: string; inputLabel?: string }> = {};
@@ -72,12 +76,14 @@ export function LiveSession() {
         setInputConfig(inputMap);
       })
       .catch(() => {});
+    return () => { cancelled = true; };
   }, [sessionId]);
 
   // Connect to SSE stream
   useEffect(() => {
     if (!sessionId) return;
 
+    setSequenceStatus(undefined);
     const url = `${API_BASE_URL}/sessions/${sessionId}/stream`;
     const es = new EventSource(url);
     esRef.current = es;
@@ -103,6 +109,7 @@ export function LiveSession() {
         setConnected(true);
         const snap = parsed.snapshot as Snapshot;
         setSnapshot(snap);
+        setSequenceStatus(snap.sequenceStatus);
         setTotalClicks(snap.clickCount);
         if (snap.startTimestamp) setStartTimestamp(snap.startTimestamp);
         if (snap.hasEnded) {
@@ -115,6 +122,7 @@ export function LiveSession() {
       }
 
       if (type === 'start') {
+        setSequenceStatus(current => current ? 'active' : current);
         const data = parsed.data as Record<string, unknown>;
         const ts = parsed.timestamp as string;
         setStartTimestamp(ts);
@@ -142,10 +150,16 @@ export function LiveSession() {
       }
 
       if (type === 'end') {
+        setSequenceStatus(current => current ? 'completed' : current);
         const data = parsed.data as Record<string, unknown>;
         const finalMoney = (data.moneyCounter ?? data.finalMoney ?? moneyCounter) as number;
         setMoneyCounter(finalMoney);
         setSessionEnded(true);
+      }
+
+      if (type === 'interrupted') {
+        setSequenceStatus('interrupted');
+        setIsPaused(false);
       }
 
       if (type === 'pause') {
@@ -175,7 +189,7 @@ export function LiveSession() {
 
   // Elapsed time timer
   useEffect(() => {
-    if (!startTimestamp || sessionEnded) {
+    if (!startTimestamp || sessionEnded || sequenceStatus === 'interrupted') {
       if (timerRef.current) clearInterval(timerRef.current);
       return;
     }
@@ -186,7 +200,7 @@ export function LiveSession() {
       setActiveElapsed(Math.floor((Date.now() - start - pausedMsRef.current - openPause) / 1000));
     }, 1000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [startTimestamp, sessionEnded]);
+  }, [startTimestamp, sessionEnded, sequenceStatus]);
 
   function formatElapsed(sec: number) {
     const m = Math.floor(sec / 60).toString().padStart(2, '0');
@@ -244,20 +258,22 @@ export function LiveSession() {
         </div>
         <div className="flex items-center gap-3">
           <span className={`inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1 rounded-full ${
-            sessionEnded
+            sessionEnded || sequenceStatus === 'planned' || sequenceStatus === 'interrupted'
               ? 'bg-muted text-muted-foreground'
               : connected
               ? 'bg-primary/10 text-primary'
               : 'bg-destructive/10 text-destructive'
           }`}>
             <span className={`w-2 h-2 rounded-full ${
-              sessionEnded ? 'bg-muted-foreground' : connected ? 'bg-primary animate-pulse' : 'bg-destructive'
+              sessionEnded || sequenceStatus === 'planned' || sequenceStatus === 'interrupted' ? 'bg-muted-foreground' : connected ? 'bg-primary animate-pulse' : 'bg-destructive'
             }`} />
-            {sessionEnded ? 'Session Ended' : connected ? 'Live' : 'Disconnected'}
+            {sequenceStatus === 'planned' ? 'Planned' : sequenceStatus === 'interrupted' ? 'Interrupted' : sessionEnded ? 'Session Ended' : connected ? 'Live' : 'Disconnected'}
           </span>
-          <Link to={`/analytics/${sessionId}`}>
-            <Button variant="outline" size="sm">View Analytics</Button>
-          </Link>
+          {sequenceStatus !== 'planned' && (
+            <Link to={`/analytics/${sessionId}`}>
+              <Button variant="outline" size="sm">View Analytics</Button>
+            </Link>
+          )}
         </div>
       </div>
 
@@ -280,6 +296,12 @@ export function LiveSession() {
             <Button size="sm">Go to Analytics →</Button>
           </Link>
         </div>
+      )}
+
+      {sequenceStatus === 'interrupted' && (
+        <p className="bg-muted border px-4 py-3 rounded-lg text-sm">
+          Session interrupted. Saved data is available in Analytics.
+        </p>
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">

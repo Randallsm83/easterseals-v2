@@ -1,4 +1,4 @@
-import type { BaseConfig, Configuration, SessionSequence, SessionDataResponse, SessionEndValue, SessionListItem, Participant, SessionNotes } from '../types';
+import type { BaseConfig, Configuration, SessionSequence, SequenceRun, SessionDataResponse, SessionEndValue, SessionListItem, Participant, SessionNotes } from '../types';
 
 // In production, use same-origin /api; in dev, use localhost:3000
 const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:3000/api');
@@ -106,6 +106,23 @@ class ApiClient {
     });
   }
 
+  async startSequenceRun(sequenceId: string, participantId: string): Promise<SequenceRun> {
+    return this.request<SequenceRun>(`/sequences/${sequenceId}/runs`, {
+      method: 'POST',
+      body: JSON.stringify({ participantId }),
+    });
+  }
+
+  async getSequenceRun(runId: string): Promise<SequenceRun> {
+    return this.request<SequenceRun>(`/sequence-runs/${runId}`);
+  }
+
+  async interruptSequenceRun(runId: string): Promise<SequenceRun> {
+    return this.request<SequenceRun>(`/sequence-runs/${runId}/interrupt`, {
+      method: 'POST',
+    });
+  }
+
   // Sessions
   async getSessions(): Promise<SessionListItem[]> {
     return this.request<SessionListItem[]>('/sessions');
@@ -122,7 +139,7 @@ class ApiClient {
     });
   }
 
-  async endSession(sessionId: string, value: SessionEndValue, timestamp: string): Promise<{ message: string }> {
+  async endSession(sessionId: string, value: SessionEndValue, timestamp: string): Promise<{ message: string; run?: SequenceRun }> {
     return this.request(`/sessions/${sessionId}/end`, {
       method: 'POST',
       body: JSON.stringify({ value, timestamp }),

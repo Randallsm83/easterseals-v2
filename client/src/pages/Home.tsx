@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { api } from '../lib/api';
-import { formatTimestamp } from '../lib/utils';
+import { formatTimestamp, formatSessionStatus } from '../lib/utils';
 import type { SessionListItem } from '../types';
 
 // Extract session number from composite sessionId (e.g., "100-3" -> "3")
@@ -104,17 +104,19 @@ export function Home() {
                   </td>
                   <td className="px-4 py-3 text-center">
                     <span className={`text-xs px-2 py-0.5 rounded-full ${
-                      session.endedAt
-                        ? 'bg-muted text-muted-foreground'
-                        : 'bg-primary/10 text-primary font-medium'
+                      formatSessionStatus(session) === 'Active'
+                        ? 'bg-primary/10 text-primary font-medium'
+                        : 'bg-muted text-muted-foreground'
                     }`}>
-                      {session.endedAt ? 'Completed' : 'Active'}
+                      {formatSessionStatus(session)}
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <Link to={`/analytics/${session.sessionId}`}>
-                      <Button variant="ghost" size="sm">View</Button>
-                    </Link>
+                    {session.sequenceStatus !== 'planned' && (
+                      <Link to={`/analytics/${session.sessionId}`}>
+                        <Button variant="ghost" size="sm">View</Button>
+                      </Link>
+                    )}
                   </td>
                 </tr>
               ))}

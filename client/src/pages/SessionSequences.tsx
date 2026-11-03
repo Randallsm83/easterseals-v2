@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -14,6 +14,7 @@ interface SequenceDraft {
 }
 
 export function SessionSequences() {
+  const navigate = useNavigate();
   const [sequences, setSequences] = useState<SessionSequence[]>([]);
   const [configurations, setConfigurations] = useState<Configuration[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,11 +25,15 @@ export function SessionSequences() {
   const [selectedConfigId, setSelectedConfigId] = useState('');
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [launchSequence, setLaunchSequence] = useState<SessionSequence | null>(null);
+  const [participantId, setParticipantId] = useState('');
+  const [launchError, setLaunchError] = useState<string | null>(null);
+  const [launching, setLaunching] = useState(false);
   const [status, setStatus] = useState('');
   const nextEntryKey = useRef(0);
   const configurationSelect = useRef<HTMLSelectElement>(null);
   const removeButtons = useRef(new Map<number, HTMLButtonElement>());
-  const busy = saving || deletingId !== null;
+  const busy = saving || launching || deletingId !== null;
 
   useEffect(() => {
     loadData();
@@ -148,6 +153,25 @@ export function SessionSequences() {
     }
   }
 
+  async function startSequence(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!launchSequence || busy) return;
+    const participant = participantId.trim();
+    if (!participant) {
+      setLaunchError('Enter a participant ID containing more than spaces.');
+      return;
+    }
+    setLaunching(true);
+    setLaunchError(null);
+    try {
+      const run = await api.startSequenceRun(launchSequence.sequenceId, participant);
+      navigate(`/sequence-runs/${run.runId}`);
+    } catch (error) {
+      setLaunchError(error instanceof Error ? error.message : 'Failed to start sequence.');
+      setLaunching(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -160,7 +184,7 @@ export function SessionSequences() {
         <Button
           type="button"
           size="lg"
-          disabled={loading || loadError !== null || busy || draft !== null}
+          disabled={loading || loadError !== null || busy || draft !== null || launchSequence !== null}
           onClick={() => openForm()}
         >
           Create Sequence
@@ -188,6 +212,41 @@ export function SessionSequences() {
           <Link to="/config/new" className="text-primary underline underline-offset-4">Create a configuration</Link>
           {' '}before adding sequence entries.
         </p>
+      )}
+
+      {launchSequence && (
+        <Card>
+          <CardHeader>
+            <CardTitle id="sequence-launch-heading">Start {launchSequence.name}</CardTitle>
+            <CardDescription>Choose one participant for every session in this sequence.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={startSequence} aria-labelledby="sequence-launch-heading" aria-busy={launching}>
+              <fieldset disabled={busy} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="sequence-participant">Participant ID</Label>
+                  <Input
+                    id="sequence-participant"
+                    value={participantId}
+                    onChange={event => setParticipantId(event.target.value)}
+                    placeholder="e.g., 150"
+                    required
+                    autoFocus
+                  />
+                </div>
+                {launchError && (
+                  <p role="alert" className="rounded-lg border border-destructive bg-destructive/10 p-4 text-destructive">
+                    {launchError}
+                  </p>
+                )}
+                <div className="flex gap-3">
+                  <Button type="submit">{launching ? 'Starting...' : 'Start Sequence'}</Button>
+                  <Button type="button" variant="outline" onClick={() => setLaunchSequence(null)}>Cancel</Button>
+                </div>
+              </fieldset>
+            </form>
+          </CardContent>
+        </Card>
       )}
 
       {draft && (
@@ -328,9 +387,21 @@ export function SessionSequences() {
               <div className="flex gap-2">
                 <Button
                   type="button"
+                  aria-label={`Start ${sequence.name}`}
+                  disabled={loading || busy || draft !== null || launchSequence !== null}
+                  onClick={() => {
+                    setParticipantId('');
+                    setLaunchError(null);
+                    setLaunchSequence(sequence);
+                  }}
+                >
+                  Start
+                </Button>
+                <Button
+                  type="button"
                   variant="outline"
                   aria-label={`Edit ${sequence.name}`}
-                  disabled={loading || busy || draft !== null}
+                  disabled={loading || busy || draft !== null || launchSequence !== null}
                   onClick={() => openForm(sequence)}
                 >
                   Edit
@@ -339,7 +410,7 @@ export function SessionSequences() {
                   type="button"
                   variant="destructive"
                   aria-label={`Delete ${sequence.name}`}
-                  disabled={loading || busy || draft?.sequenceId === sequence.sequenceId}
+                  disabled={loading || busy || draft?.sequenceId === sequence.sequenceId || launchSequence !== null}
                   onClick={() => deleteSequence(sequence)}
                 >
                   {deletingId === sequence.sequenceId ? 'Deleting...' : 'Delete'}

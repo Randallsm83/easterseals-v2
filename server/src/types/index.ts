@@ -98,6 +98,42 @@ export const LegacySessionConfigSchema = z.object({
   externalInputs: z.array(ExternalInputConfigSchema).optional(),
 });
 
+export const IdentifierSchema = z.string().min(1).max(100).refine(value => value.trim().length > 0);
+export const StoredConfigSchema = z.union([
+  SessionConfigSchema,
+  LegacySessionConfigSchema.merge(SessionConfigSchema.omit({ inputs: true })),
+]);
+export const StartSequenceRunSchema = z.object({
+  participantId: IdentifierSchema,
+});
+
+export type SequenceRunStatus = 'running' | 'completed' | 'interrupted';
+export type SequenceSessionStatus = 'planned' | 'active' | 'completed' | 'interrupted';
+export type StoredConfig = z.infer<typeof StoredConfigSchema>;
+
+export interface SequenceRunEntry {
+  position: number;
+  sessionId: string;
+  configId: string;
+  configName: string;
+  config: StoredConfig;
+  startedAt: string | null;
+  endedAt: string | null;
+}
+
+export interface SequenceRun {
+  runId: string;
+  sequenceId: string;
+  sequenceName: string;
+  participantId: string;
+  status: SequenceRunStatus;
+  currentPosition: number;
+  sequenceBalance: number;
+  createdAt: string;
+  endedAt: string | null;
+  entries: SequenceRunEntry[];
+}
+
 export const SessionSequenceInputSchema = z.object({
   name: z.string().trim().min(1).max(200),
   configIds: z.array(z.string().min(1).max(100)).min(1),
@@ -194,11 +230,14 @@ export interface PauseResumeEventRow {
 }
 
 export interface SessionDataResponse {
-  sessionConfig: SessionConfig;
+  sessionConfig: StoredConfig;
   startEvent: SessionStartEvent | null;
   endEvent: SessionEndEvent | null;
   allClicks: ClickEvent[];
   pauseEvents: PauseResumeEventRow[];
+  sequenceRunId?: string;
+  sequencePosition?: number;
+  sequenceStatus?: SequenceSessionStatus;
 }
 
 export interface SessionListResponse {
@@ -206,11 +245,20 @@ export interface SessionListResponse {
   participantId: string;
   configId: string;
   configName: string;
-  startedAt: string;
+  startedAt: string | null;
   endedAt: string | null;
+  sequenceRunId?: string;
+  sequencePosition?: number;
+  sequenceStatus?: SequenceSessionStatus;
   totalClicks: number;
   duration: number | null;
   finalMoney: number | null;
+}
+
+export interface SequenceSessionMetadata {
+  sequenceRunId: string | null;
+  sequencePosition: number | null;
+  sequenceStatus: SequenceSessionStatus | null;
 }
 
 // Analytics types
