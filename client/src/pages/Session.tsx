@@ -135,7 +135,7 @@ export function Session() {
       setSessionMessage('');
       setError(stoppedMessage);
     }
-    if (runtime.runId) {
+    if (runtime.runId && !runtime.scope.cancelled) {
       void api.interruptSequenceRun(runtime.runId).then(interrupted => {
         if (!ownsRuntime(runtime)) return;
         setError(`${stoppedMessage} ${interrupted.status === 'interrupted'
@@ -234,7 +234,7 @@ export function Session() {
 
     const latest = useSessionStore.getState();
     await runtime.pendingWrites;
-    if (runtime.failed) return;
+    if (runtime.failed || (runtime.runId && !ownsRuntime(runtime))) return;
     try {
       const result = await api.endSession(runtime.sessionId, {
         moneyCounter: latest.moneyCounter,
@@ -369,6 +369,31 @@ export function Session() {
       navigate('/');
       return;
     }
+    const retireScope = () => {
+      if (scope.cancelled) return;
+      scope.cancelled = true;
+      const runtime = runtimeRef.current;
+      if (runtime?.scope !== scope) return;
+      if (useSessionStore.getState().config?.sessionId === runtime.sessionId) endSession();
+      runtimeRef.current = null;
+      clearSessionTimers();
+      audioRef.current?.pause();
+      if (runtime.runId) {
+        void api.interruptSequenceRun(runtime.runId, { keepalive: true }).catch(cause => {
+          console.error('Abandoned sequence run could not be marked interrupted.', cause);
+        });
+      }
+    };
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      retireScope();
+      // A restored document must recheck persisted lifecycle state, never revive its old runtime.
+      window.location.reload();
+    };
+    if (runId) {
+      window.addEventListener('pagehide', retireScope);
+      window.addEventListener('pageshow', handlePageShow);
+    }
     setLoading(true);
     setError(null);
     setSessionMessage('');
@@ -378,8 +403,21 @@ export function Session() {
     void (async () => {
       try {
         if (runId) {
-          const run: SequenceRun = await api.getSequenceRun(runId);
+          let run: SequenceRun = await api.getSequenceRun(runId);
           if (scope.cancelled || routeKeyRef.current !== scope.routeKey) return;
+          if (run.status === 'running' && (run.currentPosition > 0 ||
+            run.entries.some(entry => entry.startedAt !== null || entry.endedAt !== null))) {
+            try {
+              run = await api.interruptSequenceRun(runId);
+            } catch (cause) {
+              const detail = cause instanceof Error ? cause.message : 'Request failed';
+              throw new Error(`This sequence run cannot be resumed. Run could not be marked interrupted. ${detail} A researcher must start a new run to continue.`);
+            }
+            if (scope.cancelled || routeKeyRef.current !== scope.routeKey) return;
+            if (run.status === 'running') {
+              throw new Error('This sequence run cannot be resumed. Run could not be marked interrupted. A researcher must start a new run to continue.');
+            }
+          }
           const frozenConfigs = run.entries.map(entry =>
             normalizeSessionConfig(entry.config, entry.sessionId, entry.configId));
           frozenConfigsRef.current = frozenConfigs;
@@ -393,11 +431,11 @@ export function Session() {
             setLoading(false);
             return;
           }
-          if (run.status !== 'running') throw new Error('This sequence run is interrupted.');
-          const entry = run.entries[run.currentPosition];
-          if (run.currentPosition !== 0 || !entry || entry.startedAt !== null) {
-            throw new Error('This sequence run has already started. It cannot be restarted here.');
+          if (run.status !== 'running') {
+            throw new Error('This sequence run is interrupted. A researcher must start a new run to continue.');
           }
+          const entry = run.entries[run.currentPosition];
+          if (!entry) throw new Error('Sequence configuration not found.');
           await activateCondition(scope, frozenConfigs[run.currentPosition], runId, run.currentPosition);
         } else {
           const sessionData = await api.getSessionData(routeSessionId!);
@@ -415,14 +453,9 @@ export function Session() {
       }
     })();
     return () => {
-      scope.cancelled = true;
-      const runtime = runtimeRef.current;
-      if (runtime?.scope === scope) {
-        if (useSessionStore.getState().config?.sessionId === runtime.sessionId) endSession();
-        runtimeRef.current = null;
-        clearSessionTimers();
-        audioRef.current?.pause();
-      }
+      window.removeEventListener('pagehide', retireScope);
+      window.removeEventListener('pageshow', handlePageShow);
+      retireScope();
     };
   }, [routeSessionId, runId, routeKey, navigate, activateCondition, endSession, clearSessionTimers, setConfig]);
 

@@ -117,9 +117,10 @@ class ApiClient {
     return this.request<SequenceRun>(`/sequence-runs/${runId}`);
   }
 
-  async interruptSequenceRun(runId: string): Promise<SequenceRun> {
+  async interruptSequenceRun(runId: string, options?: Pick<RequestInit, 'keepalive'>): Promise<SequenceRun> {
     return this.request<SequenceRun>(`/sequence-runs/${runId}/interrupt`, {
       method: 'POST',
+      ...options,
     });
   }
 

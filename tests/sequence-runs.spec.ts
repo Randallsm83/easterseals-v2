@@ -703,3 +703,194 @@ test('a planned sequence member cannot participate through the standalone sessio
   expect(proper.endEvent).toBeNull();
   expect((await readRun(request, app.apiURL, run.runId)).entries[1].startedAt).toBeNull();
 });
+
+test('closing and reopening recognizes abandonment even when unload interruption never reaches the API', async ({ page, context, request, app }) => {
+  const a = await createConfiguration(request, app.apiURL, 'Reload partial condition', { moneyLimit: 5000 });
+  const run = await launchRun(request, app.apiURL, [a.configId, a.configId]);
+  await openRun(page, app.apiURL, run);
+  await clickAndSave(page, app.apiURL, run.entries[0].sessionId);
+  const saved = await readData(request, app.apiURL, run.entries[0].sessionId);
+  await page.route(`${app.apiURL}/sequence-runs/${run.runId}/interrupt`, route => route.abort());
+  await page.close();
+  expect((await readRun(request, app.apiURL, run.runId)).status).toBe('running');
+  const reopenedPage = await context.newPage();
+  await reopenedPage.goto(`/sequence-runs/${run.runId}`);
+  await expect(reopenedPage.getByRole('alert')).toContainText(/interrupted/i);
+  const interrupted = await readRun(request, app.apiURL, run.runId);
+  expect(interrupted).toMatchObject({ status: 'interrupted', currentPosition: 0, sequenceBalance: 500 });
+  expect(interrupted.entries[0].endedAt).toBeNull();
+  expect(interrupted.entries[1]).toMatchObject({ startedAt: null, endedAt: null });
+  expect(await readData(request, app.apiURL, run.entries[0].sessionId)).toEqual({ ...saved, sequenceStatus: 'interrupted' });
+  expect((await readEvents(request, app.apiURL, run.entries[0].sessionId)).map(row => row.event)).toEqual(['start', 'click']);
+  expect(await readEvents(request, app.apiURL, run.entries[1].sessionId)).toEqual([]);
+  await reopenedPage.reload();
+  await expect(reopenedPage.getByRole('alert')).toContainText(/interrupted/i);
+  expect(await readRun(request, app.apiURL, run.runId)).toEqual(interrupted);
+});
+
+test('reload preserves completed and paused partial records and requires a deliberately launched fresh run', async ({ page, request, app }) => {
+  await freezeClock(page);
+  const a = await createConfiguration(request, app.apiURL, 'Completed before reload');
+  const b = await createConfiguration(request, app.apiURL, 'Paused before reload', {
+    moneyLimit: 5000, pauseEnabled: true, pauseTrigger: 'any',
+    pauseAfterResponses: 1, pauseDurationSeconds: 1, pauseResumeMode: 'auto',
+  });
+  const run = await launchRun(request, app.apiURL, [a.configId, b.configId]);
+  await openRun(page, app.apiURL, run);
+  const nextStarted = eventResponse(page, app.apiURL, run.entries[1].sessionId, 'start');
+  await clickAndSave(page, app.apiURL, run.entries[0].sessionId);
+  expect((await nextStarted).status()).toBe(201);
+  await expect(page.getByRole('button', { name: 'Click Me', exact: true })).toBeEnabled();
+  const paused = eventResponse(page, app.apiURL, run.entries[1].sessionId, 'pause');
+  await clickAndSave(page, app.apiURL, run.entries[1].sessionId);
+  expect((await paused).status()).toBe(201);
+  const completed = await readData(request, app.apiURL, run.entries[0].sessionId);
+  const partial = await readData(request, app.apiURL, run.entries[1].sessionId);
+  await page.reload();
+  await expect(page.getByRole('alert')).toContainText(/interrupted/i);
+  await page.clock.runFor(60_000);
+  await attemptBlockedInputs(page);
+  const stopped = await readRun(request, app.apiURL, run.runId);
+  expect(stopped).toMatchObject({ status: 'interrupted', currentPosition: 1, sequenceBalance: 800 });
+  expect(await readData(request, app.apiURL, run.entries[0].sessionId)).toEqual(completed);
+  expect(await readData(request, app.apiURL, run.entries[1].sessionId)).toEqual({ ...partial, sequenceStatus: 'interrupted' });
+  expect(partial.endEvent).toBeNull();
+  expect((await readEvents(request, app.apiURL, run.entries[1].sessionId)).map(row => row.event)).toEqual(['start', 'click', 'pause']);
+
+  await page.getByRole('link', { name: 'Session Sequences', exact: true }).click();
+  await page.getByRole('button', { name: `Start ${run.sequenceName}`, exact: true }).click();
+  await page.getByLabel('Participant ID', { exact: true }).fill(run.participantId);
+  const launched = page.waitForResponse(response => response.url() === `${app.apiURL}/sequences/${run.sequenceId}/runs` && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Start Sequence', exact: true }).click();
+  const fresh = await (await launched).json() as SequenceRun;
+  expect(fresh.runId).not.toBe(run.runId);
+  expect(fresh.entries.map(entry => entry.sessionId)).not.toEqual(run.entries.map(entry => entry.sessionId));
+  await expect(page.getByRole('button', { name: 'Click Me', exact: true })).toBeEnabled();
+  await expect(page.getByLabel('Balance', { exact: true })).toHaveText('$2.00');
+  await clickAndSave(page, app.apiURL, fresh.entries[0].sessionId, true);
+  expect((await readData(request, app.apiURL, fresh.entries[0].sessionId)).allClicks[0]).toMatchObject({ inputId: 'key', clickInfo: { total: 1, awardedCents: 0 } });
+  expect(await readRun(request, app.apiURL, run.runId)).toEqual(stopped);
+  expect(await readData(request, app.apiURL, run.entries[1].sessionId)).toEqual({ ...partial, sequenceStatus: 'interrupted' });
+});
+
+for (const boundary of ['click acknowledgement', 'end request', 'end acknowledgement'] as const) {
+  test(`navigation during delayed ${boundary} cannot resurrect an abandoned run or stop a fresh one`, async ({ page, request, app }) => {
+    await freezeClock(page);
+    const a = await createConfiguration(request, app.apiURL, 'Abandoned save');
+    const b = await createConfiguration(request, app.apiURL, 'Fresh long condition', { timeLimit: 300, moneyLimit: 5000 });
+    const run = await launchRun(request, app.apiURL, [a.configId, a.configId]);
+    const firstId = run.entries[0].sessionId;
+    const held = deferred();
+    const release = deferred();
+    const url = boundary === 'click acknowledgement' ? `${app.apiURL}/events` : `${app.apiURL}/sessions/${firstId}/end`;
+    await page.route(url, async route => {
+      const body = route.request().method() === 'POST' ? route.request().postDataJSON() : null;
+      if (!body || (boundary === 'click acknowledgement' && (body.sessionId !== firstId || body.event !== 'click'))) {
+        await route.continue();
+        return;
+      }
+      const response = boundary === 'end request' ? null : await route.fetch();
+      held.resolve();
+      await release.promise;
+      if (response) await route.fulfill({ response });
+      else await route.continue();
+    });
+    try {
+      await openRun(page, app.apiURL, run);
+      await page.getByRole('button', { name: 'Click Me', exact: true }).click({ force: true });
+      await held.promise;
+      const interrupted = page.waitForResponse(`${app.apiURL}/sequence-runs/${run.runId}/interrupt`);
+      await page.getByRole('link', { name: 'Home', exact: true }).click();
+      expect((await interrupted).status()).toBe(200);
+      const stopped = await readRun(request, app.apiURL, run.runId);
+      expect(stopped).toMatchObject({
+        status: 'interrupted', currentPosition: boundary === 'end acknowledgement' ? 1 : 0, sequenceBalance: 500,
+      });
+      const before = await readEvents(request, app.apiURL, firstId);
+      const fresh = await launchRun(request, app.apiURL, [b.configId, b.configId]);
+      // SPA navigation keeps the old pending callback alive in the same document.
+      await page.evaluate(runId => {
+        window.history.pushState({}, '', `/sequence-runs/${runId}`);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }, fresh.runId);
+      await expect(page.getByRole('button', { name: 'Click Me', exact: true })).toBeEnabled();
+      const acknowledged = boundary === 'click acknowledgement'
+        ? eventResponse(page, app.apiURL, firstId, 'click')
+        : page.waitForResponse(`${app.apiURL}/sessions/${firstId}/end`);
+      release.resolve();
+      await (await acknowledged).finished();
+      await page.clock.runFor(60_000);
+      await clickAndSave(page, app.apiURL, fresh.entries[0].sessionId);
+      expect(await readRun(request, app.apiURL, run.runId)).toEqual(stopped);
+      expect(await readEvents(request, app.apiURL, firstId)).toEqual(before);
+      expect(await readEvents(request, app.apiURL, run.entries[1].sessionId)).toEqual([]);
+      expect((await readData(request, app.apiURL, fresh.entries[0].sessionId)).allClicks[0]).toMatchObject({
+        clickInfo: { total: 1, awardedCents: 300 }, sessionInfo: { moneyCounter: 500 },
+      });
+      expect((await readRun(request, app.apiURL, fresh.runId)).status).toBe('running');
+      await expect(page.getByRole('alert')).toBeHidden();
+    } finally {
+      release.resolve();
+      await page.unrouteAll({ behavior: 'wait' });
+    }
+  });
+}
+
+test('completed run survives navigation before final acknowledgement, late interruption and repeated reopening', async ({ page, request, app }) => {
+  const a = await createConfiguration(request, app.apiURL, 'Completed before acknowledgement');
+  const run = await launchRun(request, app.apiURL, [a.configId]);
+  const held = deferred();
+  const release = deferred();
+  await page.route(`${app.apiURL}/sessions/${run.entries[0].sessionId}/end`, async route => {
+    const response = await route.fetch();
+    held.resolve();
+    await release.promise;
+    await route.fulfill({ response });
+  });
+  try {
+    await openRun(page, app.apiURL, run);
+    await clickAndSave(page, app.apiURL, run.entries[0].sessionId);
+    await held.promise;
+    const completed = await readRun(request, app.apiURL, run.runId);
+    expect(completed.status).toBe('completed');
+    const saved = await readData(request, app.apiURL, run.entries[0].sessionId);
+    await page.getByRole('link', { name: 'Home', exact: true }).click();
+    const acknowledged = page.waitForResponse(`${app.apiURL}/sessions/${run.entries[0].sessionId}/end`);
+    release.resolve();
+    await (await acknowledged).finished();
+    expect((await request.post(`${app.apiURL}/sequence-runs/${run.runId}/interrupt`)).status()).toBe(200);
+    for (let visit = 0; visit < 2; visit++) {
+      await page.goto(`/sequence-runs/${run.runId}`);
+      await expect(page.getByText('Session complete.', { exact: true })).toBeVisible();
+      await attemptBlockedInputs(page);
+      expect(await readRun(request, app.apiURL, run.runId)).toEqual(completed);
+      expect(await readData(request, app.apiURL, run.entries[0].sessionId)).toEqual(saved);
+    }
+  } finally {
+    release.resolve();
+    await page.unrouteAll({ behavior: 'wait' });
+  }
+});
+
+test('failed abandonment save is disclosed on re-entry and never permits participation', async ({ page, request, app }) => {
+  const a = await createConfiguration(request, app.apiURL, 'Unreachable interruption', { moneyLimit: 5000 });
+  const run = await launchRun(request, app.apiURL, [a.configId, a.configId]);
+  await openRun(page, app.apiURL, run);
+  await clickAndSave(page, app.apiURL, run.entries[0].sessionId);
+  const before = await readEvents(request, app.apiURL, run.entries[0].sessionId);
+  await page.route(`${app.apiURL}/sequence-runs/${run.runId}/interrupt`, route =>
+    route.fulfill({ status: 503, json: { error: 'Interruption storage unavailable' } }));
+  await page.goto('about:blank');
+  await page.goto(`/sequence-runs/${run.runId}`);
+  await expect(page.getByRole('alert')).toContainText(/could not.*interrupt|interruption.*could not|unable.*interrupt/i);
+  await expect(page.getByRole('alert')).toContainText('Interruption storage unavailable');
+  await attemptBlockedInputs(page);
+  expect((await readRun(request, app.apiURL, run.runId)).status).toBe('running');
+  expect(await readEvents(request, app.apiURL, run.entries[0].sessionId)).toEqual(before);
+  expect(await readEvents(request, app.apiURL, run.entries[1].sessionId)).toEqual([]);
+  await page.unrouteAll({ behavior: 'wait' });
+  await page.reload();
+  await expect(page.getByRole('alert')).toContainText(/interrupted/i);
+  expect((await readRun(request, app.apiURL, run.runId)).status).toBe('interrupted');
+  expect(await readEvents(request, app.apiURL, run.entries[0].sessionId)).toEqual(before);
+});

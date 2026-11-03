@@ -107,9 +107,24 @@ Names must contain non-whitespace text and be at most 200 characters; each seque
 
 A failed write stops participation without retrying or advancing. The runner attempts to mark the run interrupted and explicitly reports if that status could not be saved. Deleting the reusable setup preserves run identity, snapshots, sessions, and events.
 
-Sequence work is **unreleased**. Abandonment/re-entry recognition ([#59](https://github.com/Randallsm83/easterseals-v2/issues/59)) and ordered run history ([#60](https://github.com/Randallsm83/easterseals-v2/issues/60)) remain separate work; do not release the partial sequence feature.
+Closing, reloading, or navigating away from an active participant runner stops that run rather than resuming, replaying, or skipping conditions. The browser attempts to save interruption immediately. If that request is lost, reopening the participant URL checks saved participation and marks the run interrupted before allowing any input. Until that check reaches the API, history can still show the last saved status. A failed interruption save is disclosed; it is not presented as confirmed interruption.
+
+Completed runs stay completed when reopened. Interrupted runs retain completed sessions and already saved partial responses, without fabricating a session ending or a time/money-limit reason. Responses that never reached storage cannot be recovered. For further participation, return to **Session Sequences** and deliberately launch a new run with the participant ID; this creates separate records and leaves the interrupted run unchanged.
+
+Sequence work is **unreleased**. Ordered run history ([#60](https://github.com/Randallsm83/easterseals-v2/issues/60)) remains separate work; do not release the partial sequence feature.
 
 ## Unreleased
+
+### Abandoned sequence runs (#59)
+
+- Added immediate owner-scoped shutdown on runner navigation and page exit, plus persisted interruption on re-entry when a run has already started.
+- Prevented delayed response/completion acknowledgements and restored browser documents from restarting participation. Completed runs remain completed after late interruption requests.
+- Preserved saved completed and partial results without inventing an ending. Further participation requires a deliberately launched new run.
+- Added real browser/API/isolated-SQLite regression coverage for reload, close/reopen with lost unload delivery, saved partial results, fresh launch, delayed-save races, completed re-entry, and interruption-save failures.
+
+Local verification: all 64 browser/API regression tests passed. Workspace typechecks, explicit client application and strict test-source typechecks, lint, and production builds passed. Separate observed browser smoke runs saved rewarded responses, reloaded and closed/reopened into the interrupted screen, and confirmed saved balances/responses with no end event or next-session start. A fresh launch through the researcher UI created a separate run for the same participant.
+
+Standards, specification, and error-handling reviews found no remaining defects. Physical gamepad hardware and actual BFCache restoration were not exercised; BFCache handling was source-reviewed.
 
 ### Frozen session sequence execution (#58)
 
