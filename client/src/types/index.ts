@@ -109,6 +109,34 @@ export interface Configuration {
   sessionCount?: number;
 }
 
+export interface SessionSequence {
+  sequenceId: string;
+  name: string;
+  configIds: string[];
+  createdAt: string;
+}
+
+export interface SequenceRun {
+  runId: string;
+  sequenceId: string;
+  sequenceName: string;
+  participantId: string;
+  status: 'running' | 'completed' | 'interrupted';
+  currentPosition: number;
+  sequenceBalance: number;
+  createdAt: string;
+  endedAt: string | null;
+  entries: {
+    position: number;
+    sessionId: string;
+    configId: string;
+    configName: string;
+    config: RawStoredConfig;
+    startedAt: string | null;
+    endedAt: string | null;
+  }[];
+}
+
 export interface SessionConfig {
   sessionId: string;
   configId: string;
@@ -191,6 +219,12 @@ export interface SessionStartEvent {
   };
 }
 
+export interface SessionEndValue extends SessionInfo {
+  clicks: Record<string, number>;
+  totalClicks: number;
+  pendingRewards: Record<string, number>;
+}
+
 export interface SessionEndEvent {
   sessionId: string;
   timestamp: string;
@@ -198,12 +232,9 @@ export interface SessionEndEvent {
     moneyCounter: number;
     moneyLimitReached: boolean;
     timeLimitReached: boolean;
-    clicks: {
-      total: number;
-      left: number;
-      middle: number;
-      right: number;
-    };
+    clicks: Record<string, number>;
+    totalClicks?: number;
+    pendingRewards?: Record<string, number>;
   };
 }
 
@@ -212,7 +243,13 @@ export interface PauseResumeEventRow {
   timestamp: string;
 }
 
-export interface SessionDataResponse {
+export interface SequenceSessionMetadata {
+  sequenceRunId?: string;
+  sequencePosition?: number;
+  sequenceStatus?: 'planned' | 'active' | 'completed' | 'interrupted';
+}
+
+export interface SessionDataResponse extends SequenceSessionMetadata {
   sessionConfig: SessionConfigExtended;
   startEvent: SessionStartEvent | null;
   endEvent: SessionEndEvent | null;
@@ -220,12 +257,12 @@ export interface SessionDataResponse {
   pauseEvents?: PauseResumeEventRow[];
 }
 
-export interface SessionListItem {
+export interface SessionListItem extends SequenceSessionMetadata {
   sessionId: string;
   participantId: string;
   configId: string;
   configName: string;
-  startedAt: string;
+  startedAt: string | null;
   endedAt: string | null;
   totalClicks: number;
   duration: number | null;

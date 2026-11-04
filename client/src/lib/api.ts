@@ -1,4 +1,4 @@
-import type { BaseConfig, Configuration, SessionDataResponse, SessionListItem, Participant, SessionNotes } from '../types';
+import type { BaseConfig, Configuration, SessionSequence, SequenceRun, SessionDataResponse, SessionEndValue, SessionListItem, Participant, SessionNotes } from '../types';
 
 // In production, use same-origin /api; in dev, use localhost:3000
 const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:3000/api');
@@ -81,6 +81,53 @@ class ApiClient {
     return this.request<SessionListItem[]>(`/configurations/${configId}/sessions`);
   }
 
+  // Session sequences
+  async getSequences(): Promise<SessionSequence[]> {
+    return this.request<SessionSequence[]>('/sequences');
+  }
+
+  async createSequence(data: { name: string; configIds: string[] }): Promise<SessionSequence> {
+    return this.request<SessionSequence>('/sequences', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSequence(sequenceId: string, data: { name: string; configIds: string[] }): Promise<SessionSequence> {
+    return this.request<SessionSequence>(`/sequences/${sequenceId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSequence(sequenceId: string): Promise<{ message: string }> {
+    return this.request(`/sequences/${sequenceId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async startSequenceRun(sequenceId: string, participantId: string): Promise<SequenceRun> {
+    return this.request<SequenceRun>(`/sequences/${sequenceId}/runs`, {
+      method: 'POST',
+      body: JSON.stringify({ participantId }),
+    });
+  }
+
+  async getSequenceRuns(): Promise<Omit<SequenceRun, 'entries'>[]> {
+    return this.request<Omit<SequenceRun, 'entries'>[]>('/sequence-runs');
+  }
+
+  async getSequenceRun(runId: string): Promise<SequenceRun> {
+    return this.request<SequenceRun>(`/sequence-runs/${runId}`);
+  }
+
+  async interruptSequenceRun(runId: string, options?: Pick<RequestInit, 'keepalive'>): Promise<SequenceRun> {
+    return this.request<SequenceRun>(`/sequence-runs/${runId}/interrupt`, {
+      method: 'POST',
+      ...options,
+    });
+  }
+
   // Sessions
   async getSessions(): Promise<SessionListItem[]> {
     return this.request<SessionListItem[]>('/sessions');
@@ -97,9 +144,10 @@ class ApiClient {
     });
   }
 
-  async endSession(sessionId: string): Promise<{ message: string }> {
+  async endSession(sessionId: string, value: SessionEndValue, timestamp: string): Promise<{ message: string; run?: SequenceRun }> {
     return this.request(`/sessions/${sessionId}/end`, {
       method: 'POST',
+      body: JSON.stringify({ value, timestamp }),
     });
   }
 
@@ -112,7 +160,7 @@ class ApiClient {
   // Events
   async logEvent(data: {
     sessionId: string;
-    event: 'start' | 'end' | 'click' | 'pause' | 'resume';
+    event: 'start' | 'click' | 'pause' | 'resume';
     value: unknown;
     timestamp?: string;
   }): Promise<{ message: string }> {

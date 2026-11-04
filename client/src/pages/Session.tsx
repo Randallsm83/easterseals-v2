@@ -1,14 +1,27 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useSessionStore } from '../stores/useSessionStore';
-// Reading directly from the store via getState() returns the latest synchronous
-// value, which is needed when we have to log an 'end' event in the same tick that
-// we awarded money (the React closure value is still stale at that point).
 import { api } from '../lib/api';
 import { normalizeSessionConfig } from '../lib/normalizeConfig';
 import { useExternalInput } from '../lib/useExternalInput';
-import type { InputConfig } from '../types';
+import type { InputConfig, SequenceRun, SessionConfig } from '../types';
 import { cn } from '../lib/utils';
+import { Button } from '../components/ui/button';
+
+interface SessionScope {
+  routeKey: string;
+  cancelled: boolean;
+}
+
+interface SessionRuntime {
+  scope: SessionScope;
+  sessionId: string;
+  runId?: string;
+  position: number;
+  pendingWrites: Promise<boolean> | null;
+  ending: boolean;
+  failed: boolean;
+}
 
 // Format cents as dollars
 function formatMoney(cents: number): string {
@@ -16,16 +29,15 @@ function formatMoney(cents: number): string {
 }
 
 export function Session() {
-  const { sessionId } = useParams<{ sessionId: string }>();
+  const { sessionId: routeSessionId } = useParams<{ sessionId: string }>();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const runId = routeSessionId ? undefined : searchParams.get('runId') || undefined;
   const navigate = useNavigate();
   const {
     config,
     setConfig,
     moneyCounter,
-    totalClicks,
-    inputClickCounts,
-    moneyLimitReached,
-    timeLimitReached,
     sessionActive,
     incrementClick,
     incrementInterval,
@@ -40,39 +52,46 @@ export function Session() {
     endSession,
   } = useSessionStore();
 
+  const sessionId = config?.sessionId;
+  const routeKey = runId
+    ? `run:${runId}:${location.pathname}${location.search}`
+    : `session:${routeSessionId ?? ''}`;
+  const routeKeyRef = useRef(routeKey);
+  routeKeyRef.current = routeKey;
+  const runtimeRef = useRef<SessionRuntime | null>(null);
+  const frozenConfigsRef = useRef<SessionConfig[]>([]);
+  const [sequenceBalance, setSequenceBalance] = useState(0);
+  const [sequenceComplete, setSequenceComplete] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sessionMessage, setSessionMessage] = useState('');
   const timerIdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const sessionInitializedRef = useRef(false);
-
   const [lastActivatedInput, setLastActivatedInput] = useState<string | null>(null);
   const lastActivatedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Wall-clock ms of the most recent activation, per inputId. A reward on input X is
-  // only delivered once every OTHER input has been quiet for changeoverDelayMs.
+  // A reward waits until every other input has been quiet for the configured delay.
   const lastActivationAtRef = useRef<Record<string, number>>({});
-
-  // ---- Pause state ----
   const [isPaused, setIsPaused] = useState(false);
+  const isPausedRef = useRef(false);
   const [pauseRemainingSec, setPauseRemainingSec] = useState<number | null>(null);
-  // Qualifying responses counted since the last pause/start.
   const responseCountSincePauseRef = useRef(0);
-  // Absolute timestamp (ms) when the time-limit will fire; used to compute remaining time on pause.
   const timeLimitEndAtRef = useRef<number | null>(null);
-  // Remaining ms on the time-limit while currently paused.
   const timeLimitRemainingMsRef = useRef<number | null>(null);
   const pauseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pauseCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Refs for latest state values (needed for setTimeout callback)
-  const stateRef = useRef({ moneyCounter, totalClicks, inputClickCounts, moneyLimitReached, timeLimitReached });
-  stateRef.current = { moneyCounter, totalClicks, inputClickCounts, moneyLimitReached, timeLimitReached };
+  const ownsRuntime = useCallback((runtime: SessionRuntime) =>
+    !runtime.scope.cancelled &&
+    runtime.scope.routeKey === routeKeyRef.current &&
+    runtimeRef.current === runtime &&
+    useSessionStore.getState().config?.sessionId === runtime.sessionId,
+  []);
 
   // Initialize audio element
   useEffect(() => {
     audioRef.current = new Audio('/sounds/money.mp3');
     return () => {
+      audioRef.current?.pause();
       audioRef.current = null;
     };
   }, []);
@@ -84,88 +103,188 @@ export function Session() {
     }
   }, []);
 
-  // Handle time limit reached
-  const handleTimeLimitEnd = useCallback(async () => {
-    if (stateRef.current.timeLimitReached) return;
-
-    setTimeLimitReached(true);
-    endSession();
-    setSessionMessage('Time limit reached. Session ended.');
-
-    const latest = useSessionStore.getState();
-    await Promise.all([
-      api.logEvent({
-        sessionId: sessionId!,
-        event: 'end',
-        value: {
-          moneyCounter: latest.moneyCounter,
-          moneyLimitReached: latest.moneyLimitReached,
-          timeLimitReached: true,
-          clicks: latest.inputClickCounts,
-          totalClicks: latest.totalClicks,
-          pendingRewards: latest.pendingRewards,
-        },
-      }),
-      api.endSession(sessionId!),
-    ]);
-  }, [sessionId, setTimeLimitReached, endSession]);
-
-  // Keep latest handler in a ref so scheduleTimeLimit can call it without re-creating itself.
-  const handleTimeLimitEndRef = useRef(handleTimeLimitEnd);
-  useEffect(() => { handleTimeLimitEndRef.current = handleTimeLimitEnd; }, [handleTimeLimitEnd]);
-
-  // Schedule the time-limit end-of-session timer with the given remaining ms.
-  const scheduleTimeLimit = useCallback((remainingMs: number) => {
-    if (timerIdRef.current) {
-      clearTimeout(timerIdRef.current);
-      timerIdRef.current = null;
-    }
-    timeLimitEndAtRef.current = Date.now() + remainingMs;
-    timerIdRef.current = setTimeout(() => {
-      handleTimeLimitEndRef.current();
-    }, remainingMs);
+  const clearSessionTimers = useCallback(() => {
+    clearTimeout(timerIdRef.current ?? undefined);
+    clearTimeout(pauseTimerRef.current ?? undefined);
+    clearInterval(pauseCountdownRef.current ?? undefined);
+    clearTimeout(lastActivatedTimerRef.current ?? undefined);
+    timerIdRef.current = null;
+    pauseTimerRef.current = null;
+    pauseCountdownRef.current = null;
+    lastActivatedTimerRef.current = null;
+    timeLimitEndAtRef.current = null;
+    timeLimitRemainingMsRef.current = null;
   }, []);
 
-  // Handle money limit reached
-  const handleMoneyLimitEnd = useCallback(async () => {
-    if (moneyLimitReached || !config) return;
+  const stopSessionActivity = useCallback((runtime: SessionRuntime) => {
+    if (!ownsRuntime(runtime)) return;
+    endSession();
+    clearSessionTimers();
+    isPausedRef.current = false;
+    responseCountSincePauseRef.current = 0;
+    lastActivationAtRef.current = {};
+    setIsPaused(false);
+    setPauseRemainingSec(null);
+    setLastActivatedInput(null);
+  }, [endSession, ownsRuntime, clearSessionTimers]);
 
-    setMoneyLimitReached(true);
-
-    if (!config.continueAfterMoneyLimit) {
-      endSession();
-      setSessionMessage('Money limit reached. Session ended.');
-      if (timerIdRef.current) {
-        clearTimeout(timerIdRef.current);
-        timerIdRef.current = null;
-      }
-
-      // Read the latest values straight from the Zustand store. The closure-captured
-      // moneyCounter/totalClicks/inputClickCounts may be stale because the awarding
-      // click that triggered this end happened in the same tick — React state from
-      // useSessionStore() hasn't propagated yet, but the store itself has.
-      const latest = useSessionStore.getState();
-      await Promise.all([
-        api.logEvent({
-          sessionId: sessionId!,
-          event: 'end',
-          value: {
-            moneyCounter: latest.moneyCounter,
-            moneyLimitReached: true,
-            timeLimitReached: latest.timeLimitReached,
-            clicks: latest.inputClickCounts,
-            totalClicks: latest.totalClicks,
-            pendingRewards: latest.pendingRewards,
-          },
-        }),
-        api.endSession(sessionId!),
-      ]);
+  const failSession = useCallback((runtime: SessionRuntime, cause: unknown) => {
+    if (runtime.failed) return;
+    runtime.failed = true;
+    runtime.ending = true;
+    const message = cause instanceof Error ? cause.message : 'Request failed';
+    const stoppedMessage = `${runtime.runId ? 'Sequence' : 'Session'} stopped because data could not be saved. ${message}`;
+    if (ownsRuntime(runtime)) {
+      audioRef.current?.pause();
+      stopSessionActivity(runtime);
+      setSessionMessage('');
+      setError(stoppedMessage);
     }
-  }, [config, sessionId, moneyLimitReached, setMoneyLimitReached, endSession]);
+    if (runtime.runId && !runtime.scope.cancelled) {
+      void api.interruptSequenceRun(runtime.runId).then(interrupted => {
+        if (!ownsRuntime(runtime)) return;
+        setError(`${stoppedMessage} ${interrupted.status === 'interrupted'
+          ? 'Run marked interrupted.'
+          : interrupted.status === 'completed'
+            ? 'Run was already completed.'
+            : 'Run could not be marked interrupted.'}`);
+      }).catch(interruptionError => {
+        if (!ownsRuntime(runtime)) return;
+        const detail = interruptionError instanceof Error ? interruptionError.message : 'Request failed';
+        setError(`${stoppedMessage} Run could not be marked interrupted. ${detail}`);
+      });
+    }
+  }, [ownsRuntime, stopSessionActivity]);
+
+  const logSessionEvent = useCallback((
+    runtime: SessionRuntime,
+    data: Omit<Parameters<typeof api.logEvent>[0], 'sessionId'>,
+  ) => {
+    if (runtime.failed || !ownsRuntime(runtime)) return Promise.resolve(false);
+    const event = { ...data, sessionId: runtime.sessionId, timestamp: data.timestamp ?? new Date().toISOString() };
+    // Accepted writes keep their owner and order even if navigation replaces the store.
+    const write = (runtime.pendingWrites ?? Promise.resolve(true)).then(async previousSaved => {
+      if (!previousSaved) return false;
+      try {
+        await api.logEvent(event);
+        return true;
+      } catch (cause) {
+        failSession(runtime, cause);
+        return false;
+      }
+    });
+    runtime.pendingWrites = write;
+    return write;
+  }, [failSession, ownsRuntime]);
+
+  const handleTimeLimitEndRef = useRef<(() => void) | null>(null);
+  const scheduleTimeLimit = useCallback((remainingMs: number, runtime: SessionRuntime) => {
+    if (!ownsRuntime(runtime) || runtime.ending || runtime.failed) return;
+    clearTimeout(timerIdRef.current ?? undefined);
+    timeLimitEndAtRef.current = Date.now() + remainingMs;
+    timerIdRef.current = setTimeout(() => {
+      if (ownsRuntime(runtime) && !runtime.ending && !runtime.failed) {
+        handleTimeLimitEndRef.current?.();
+      }
+    }, remainingMs);
+  }, [ownsRuntime]);
+
+  const activateCondition = useCallback(async (
+    scope: SessionScope,
+    sessionConfig: SessionConfig,
+    sequenceRunId?: string,
+    position = 0,
+  ) => {
+    if (scope.cancelled || scope.routeKey !== routeKeyRef.current) return;
+    clearSessionTimers();
+    isPausedRef.current = false;
+    lastActivationAtRef.current = {};
+    responseCountSincePauseRef.current = 0;
+    setIsPaused(false);
+    setPauseRemainingSec(null);
+    setLastActivatedInput(null);
+    const runtime: SessionRuntime = {
+      scope,
+      sessionId: sessionConfig.sessionId,
+      runId: sequenceRunId,
+      position,
+      pendingWrites: null,
+      ending: false,
+      failed: false,
+    };
+    runtimeRef.current = runtime;
+    setConfig(sessionConfig);
+    setLoading(false);
+    const saved = await logSessionEvent(runtime, {
+      event: 'start',
+      value: {
+        moneyCounter: sessionConfig.startingMoney,
+        moneyLimitReached: false,
+        timeLimitReached: false,
+      },
+    });
+    if (!saved || !ownsRuntime(runtime) || runtime.ending) return;
+    startSession();
+    scheduleTimeLimit(sessionConfig.timeLimit * 1000, runtime);
+  }, [clearSessionTimers, setConfig, logSessionEvent, ownsRuntime, startSession, scheduleTimeLimit]);
+
+  const finishSession = useCallback(async (reason: 'time' | 'money') => {
+    const runtime = runtimeRef.current;
+    if (!runtime || !ownsRuntime(runtime) || runtime.ending || runtime.failed) return;
+    runtime.ending = true;
+    const timestamp = new Date().toISOString();
+    if (reason === 'time') setTimeLimitReached(true);
+    stopSessionActivity(runtime);
+    if (!runtime.runId) setSessionMessage('Saving session...');
+
+    const latest = useSessionStore.getState();
+    await runtime.pendingWrites;
+    if (runtime.failed || (runtime.runId && !ownsRuntime(runtime))) return;
+    try {
+      const result = await api.endSession(runtime.sessionId, {
+        moneyCounter: latest.moneyCounter,
+        moneyLimitReached: latest.moneyLimitReached,
+        timeLimitReached: latest.timeLimitReached,
+        clicks: latest.inputClickCounts,
+        totalClicks: latest.totalClicks,
+        pendingRewards: latest.pendingRewards,
+      }, timestamp);
+      if (!ownsRuntime(runtime)) return;
+      if (!runtime.runId) {
+        setSessionMessage(reason === 'time'
+          ? 'Time limit reached. Session ended.'
+          : 'Money limit reached. Session ended.');
+        return;
+      }
+      const nextRun = result.run;
+      if (!nextRun || nextRun.runId !== runtime.runId || nextRun.currentPosition !== runtime.position + 1) {
+        throw new Error('The next sequence condition could not be confirmed.');
+      }
+      setSequenceBalance(nextRun.sequenceBalance);
+      if (nextRun.status === 'completed' && nextRun.currentPosition === frozenConfigsRef.current.length) {
+        setSequenceComplete(true);
+        setSessionMessage('Session complete.');
+      } else {
+        const nextConfig = frozenConfigsRef.current[nextRun.currentPosition];
+        if (nextRun.status !== 'running' || !nextConfig) {
+          throw new Error('The next sequence condition is unavailable.');
+        }
+        await activateCondition(runtime.scope, nextConfig, runtime.runId, nextRun.currentPosition);
+      }
+    } catch (cause) {
+      failSession(runtime, cause);
+    }
+  }, [setTimeLimitReached, stopSessionActivity, ownsRuntime, activateCondition, failSession]);
+
+  useEffect(() => {
+    handleTimeLimitEndRef.current = () => { void finishSession('time'); };
+  }, [finishSession]);
+
 
   // ---- Resume from pause ----
-  const resumeSession = useCallback(async () => {
-    if (!isPaused) return;
+  const resumeSession = useCallback(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime || !ownsRuntime(runtime) || !isPausedRef.current || runtime.ending || runtime.failed) return;
 
     if (pauseTimerRef.current) {
       clearTimeout(pauseTimerRef.current);
@@ -176,35 +295,35 @@ export function Session() {
       pauseCountdownRef.current = null;
     }
 
+    isPausedRef.current = false;
     setIsPaused(false);
     setPauseRemainingSec(null);
     responseCountSincePauseRef.current = 0;
 
     // Resume the time-limit countdown from the stored remaining ms
-    if (timeLimitRemainingMsRef.current !== null && timeLimitRemainingMsRef.current > 0) {
-      scheduleTimeLimit(timeLimitRemainingMsRef.current);
+    if (timeLimitRemainingMsRef.current !== null) {
+      scheduleTimeLimit(timeLimitRemainingMsRef.current, runtime);
     }
     timeLimitRemainingMsRef.current = null;
 
-    await api.logEvent({
-      sessionId: sessionId!,
+    const latest = useSessionStore.getState();
+    void logSessionEvent(runtime, {
       event: 'resume',
       value: {
-        moneyCounter: stateRef.current.moneyCounter,
-        totalClicks: stateRef.current.totalClicks,
+        moneyCounter: latest.moneyCounter,
+        totalClicks: latest.totalClicks,
       },
     });
-  }, [isPaused, sessionId, scheduleTimeLimit]);
+  }, [ownsRuntime, scheduleTimeLimit, logSessionEvent]);
 
-  // Latest resumeSession callback. The auto-resume setTimeout below is armed while
-  // isPaused is still false, so calling resumeSession directly would capture a closure
-  // whose `if (!isPaused) return` guard short-circuits and the session never resumes.
+  // Timers always invoke the latest resume handler.
   const resumeSessionRef = useRef(resumeSession);
   useEffect(() => { resumeSessionRef.current = resumeSession; }, [resumeSession]);
 
   // ---- Enter pause ----
-  const pauseSession = useCallback(async () => {
-    if (isPaused || !sessionId || !config) return;
+  const pauseSession = useCallback(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime || !ownsRuntime(runtime) || runtime.ending || runtime.failed || isPausedRef.current || !config || config.sessionId !== runtime.sessionId) return;
 
     // Snapshot remaining time on the time-limit so we can resume later
     if (timeLimitEndAtRef.current !== null) {
@@ -215,15 +334,16 @@ export function Session() {
       timerIdRef.current = null;
     }
 
+    isPausedRef.current = true;
     setIsPaused(true);
     responseCountSincePauseRef.current = 0;
 
-    await api.logEvent({
-      sessionId,
+    const latest = useSessionStore.getState();
+    void logSessionEvent(runtime, {
       event: 'pause',
       value: {
-        moneyCounter: stateRef.current.moneyCounter,
-        totalClicks: stateRef.current.totalClicks,
+        moneyCounter: latest.moneyCounter,
+        totalClicks: latest.totalClicks,
       },
     });
 
@@ -232,91 +352,135 @@ export function Session() {
     if ((config.pauseResumeMode ?? 'auto') === 'auto') {
       setPauseRemainingSec(durationSec);
       pauseTimerRef.current = setTimeout(() => {
-        resumeSessionRef.current();
+        if (ownsRuntime(runtime) && !runtime.ending && !runtime.failed) resumeSessionRef.current();
       }, durationSec * 1000);
       pauseCountdownRef.current = setInterval(() => {
-        setPauseRemainingSec((prev) => (prev !== null ? Math.max(0, prev - 1) : null));
+        if (ownsRuntime(runtime) && !runtime.ending && !runtime.failed) {
+          setPauseRemainingSec(prev => (prev !== null ? Math.max(0, prev - 1) : null));
+        }
       }, 1000);
     } else {
       setPauseRemainingSec(null);
     }
-  }, [config, isPaused, sessionId]);
+  }, [config, ownsRuntime, logSessionEvent]);
 
   // Latest pauseSession callback (so handleInputActivation can call it without re-binding).
   const pauseSessionRef = useRef(pauseSession);
   useEffect(() => { pauseSessionRef.current = pauseSession; }, [pauseSession]);
 
-  const loadSessionConfig = useCallback(async () => {
-    if (sessionInitializedRef.current) return;
-    sessionInitializedRef.current = true;
-
-    try {
-      const sessionData = await api.getSessionData(sessionId!);
-      const raw = sessionData.sessionConfig;
-      const sessionConfig = normalizeSessionConfig(raw, sessionId!, raw.configId ?? '');
-
-      setConfig(sessionConfig);
-      setLoading(false);
-
-      await api.logEvent({
-        sessionId: sessionId!,
-        event: 'start',
-        value: {
-          moneyCounter: sessionConfig.startingMoney,
-          moneyLimitReached: false,
-          timeLimitReached: false,
-        },
-      });
-
-      lastActivationAtRef.current = {};
-      startSession();
-      scheduleTimeLimit(sessionConfig.timeLimit * 1000);
-    } catch (err) {
-      sessionInitializedRef.current = false;
-      setError(err instanceof Error ? err.message : 'Failed to load session');
-      setLoading(false);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
-
   useEffect(() => {
-    if (!sessionId) {
+    const scope: SessionScope = { routeKey, cancelled: false };
+    if (!routeSessionId && !runId) {
       navigate('/');
       return;
     }
-    loadSessionConfig();
-    return () => {
-      if (timerIdRef.current) clearTimeout(timerIdRef.current);
-      if (pauseTimerRef.current) clearTimeout(pauseTimerRef.current);
-      if (pauseCountdownRef.current) clearInterval(pauseCountdownRef.current);
+    const retireScope = () => {
+      if (scope.cancelled) return;
+      scope.cancelled = true;
+      const runtime = runtimeRef.current;
+      if (runtime?.scope !== scope) return;
+      if (useSessionStore.getState().config?.sessionId === runtime.sessionId) endSession();
+      runtimeRef.current = null;
+      clearSessionTimers();
+      audioRef.current?.pause();
+      if (runtime.runId) {
+        void api.interruptSequenceRun(runtime.runId, { keepalive: true }).catch(cause => {
+          console.error('Abandoned sequence run could not be marked interrupted.', cause);
+        });
+      }
     };
-  }, [sessionId, navigate, loadSessionConfig]);
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      retireScope();
+      // A restored document must recheck persisted lifecycle state, never revive its old runtime.
+      window.location.reload();
+    };
+    if (runId) {
+      window.addEventListener('pagehide', retireScope);
+      window.addEventListener('pageshow', handlePageShow);
+    }
+    setLoading(true);
+    setError(null);
+    setSessionMessage('');
+    setSequenceComplete(false);
+    setSequenceBalance(0);
+    frozenConfigsRef.current = [];
+    void (async () => {
+      try {
+        if (runId) {
+          let run: SequenceRun = await api.getSequenceRun(runId);
+          if (scope.cancelled || routeKeyRef.current !== scope.routeKey) return;
+          if (run.status === 'running' && (run.currentPosition > 0 ||
+            run.entries.some(entry => entry.startedAt !== null || entry.endedAt !== null))) {
+            try {
+              run = await api.interruptSequenceRun(runId);
+            } catch (cause) {
+              const detail = cause instanceof Error ? cause.message : 'Request failed';
+              throw new Error(`This sequence run cannot be resumed. Run could not be marked interrupted. ${detail} A researcher must start a new run to continue.`);
+            }
+            if (scope.cancelled || routeKeyRef.current !== scope.routeKey) return;
+            if (run.status === 'running') {
+              throw new Error('This sequence run cannot be resumed. Run could not be marked interrupted. A researcher must start a new run to continue.');
+            }
+          }
+          const frozenConfigs = run.entries.map(entry =>
+            normalizeSessionConfig(entry.config, entry.sessionId, entry.configId));
+          frozenConfigsRef.current = frozenConfigs;
+          setSequenceBalance(run.sequenceBalance);
+          if (run.status === 'completed') {
+            const lastConfig = frozenConfigs[frozenConfigs.length - 1];
+            if (!lastConfig) throw new Error('Sequence configuration not found.');
+            setConfig(lastConfig);
+            setSequenceComplete(true);
+            setSessionMessage('Session complete.');
+            setLoading(false);
+            return;
+          }
+          if (run.status !== 'running') {
+            throw new Error('This sequence run is interrupted. A researcher must start a new run to continue.');
+          }
+          const entry = run.entries[run.currentPosition];
+          if (!entry) throw new Error('Sequence configuration not found.');
+          await activateCondition(scope, frozenConfigs[run.currentPosition], runId, run.currentPosition);
+        } else {
+          const sessionData = await api.getSessionData(routeSessionId!);
+          if (scope.cancelled || routeKeyRef.current !== scope.routeKey) return;
+          if (sessionData.sequenceRunId) {
+            throw new Error('This session belongs to a sequence run. Use the sequence runner to participate.');
+          }
+          const raw = sessionData.sessionConfig;
+          await activateCondition(scope, normalizeSessionConfig(raw, routeSessionId!, raw.configId ?? ''));
+        }
+      } catch (cause) {
+        if (scope.cancelled || routeKeyRef.current !== scope.routeKey) return;
+        setError(cause instanceof Error ? cause.message : 'Failed to load session');
+        setLoading(false);
+      }
+    })();
+    return () => {
+      window.removeEventListener('pagehide', retireScope);
+      window.removeEventListener('pageshow', handlePageShow);
+      retireScope();
+    };
+  }, [routeSessionId, runId, routeKey, navigate, activateCondition, endSession, clearSessionTimers, setConfig]);
 
   // Pays out one reward for `inputConfig`, clamped to the session money limit, and
   // returns the cents actually awarded.
-  const deliverReward = useCallback(async (inputConfig: InputConfig): Promise<number> => {
+  const deliverReward = useCallback((inputConfig: InputConfig): number => {
     if (!config) return 0;
-    // Read the counter from the store, not the closure: a banked reward and a freshly
-    // earned one can resolve in the same tick, and the second must clamp against the
-    // already-mutated total. Same reasoning as the comment in handleMoneyLimitEnd.
     const current = useSessionStore.getState().moneyCounter;
-    if (current + inputConfig.moneyAwarded >= config.moneyLimit) {
-      const awardedCents = config.moneyLimit - current;
-      awardMoney(awardedCents);
-      if (inputConfig.playAwardSound) playAwardSound();
-      await handleMoneyLimitEnd();
-      return awardedCents;
-    }
-    awardMoney(inputConfig.moneyAwarded);
+    const awardedCents = Math.min(inputConfig.moneyAwarded, Math.max(0, config.moneyLimit - current));
+    awardMoney(awardedCents);
+    if (current + awardedCents >= config.moneyLimit) setMoneyLimitReached(true);
     if (inputConfig.playAwardSound) playAwardSound();
-    return inputConfig.moneyAwarded;
-  }, [config, awardMoney, playAwardSound, handleMoneyLimitEnd]);
+    return awardedCents;
+  }, [config, awardMoney, setMoneyLimitReached, playAwardSound]);
 
   // Unified click handler — works for both screen buttons and physical inputs
-  const handleInputActivation = useCallback(async (inputId: string) => {
-    if (!config) return;
-    if (isPaused) return;
-    if (!sessionActive && !(config.continueAfterMoneyLimit && moneyLimitReached)) return;
+  const handleInputActivation = useCallback((inputId: string) => {
+    const runtime = runtimeRef.current;
+    if (!config || !runtime || !ownsRuntime(runtime) || config.sessionId !== runtime.sessionId) return;
+    if (isPausedRef.current || runtime.ending || runtime.failed || !useSessionStore.getState().sessionActive) return;
 
     const inputConfig = config.inputs.find(i => i.id === inputId);
     if (!inputConfig) return;
@@ -338,16 +502,18 @@ export function Session() {
 
     // Visual flash
     setLastActivatedInput(inputId);
-    if (lastActivatedTimerRef.current) clearTimeout(lastActivatedTimerRef.current);
-    lastActivatedTimerRef.current = setTimeout(() => setLastActivatedInput(null), 200);
+    clearTimeout(lastActivatedTimerRef.current ?? undefined);
+    lastActivatedTimerRef.current = setTimeout(() => {
+      if (ownsRuntime(runtime) && !runtime.ending && !runtime.failed) setLastActivatedInput(null);
+    }, 200);
 
     let awardedCents = 0;
     let codWithheld = false;
 
-    if (inputConfig.isRewarded && !moneyLimitReached) {
+    if (inputConfig.isRewarded && !useSessionStore.getState().moneyLimitReached) {
       // Pay out a previously withheld reward first, once the changeover delay is clear.
       if (codSatisfied && consumePendingReward(inputId)) {
-        awardedCents = await deliverReward(inputConfig);
+        awardedCents = deliverReward(inputConfig);
       }
 
       const newInterval = incrementInterval(inputId);
@@ -356,7 +522,7 @@ export function Session() {
       if (newInterval >= rewardTarget) {
         resetInterval(inputId);
         if (!codEnabled || (codSatisfied && awardedCents === 0)) {
-          awardedCents = await deliverReward(inputConfig);
+          awardedCents = deliverReward(inputConfig);
         } else {
           // Either the changeover delay is not met, or one reward already went out on
           // this response. Bank it; it pays on the next clear response on this input.
@@ -366,32 +532,30 @@ export function Session() {
       }
     }
 
-    // Log the event
-    const updatedClicks = {
-      ...stateRef.current.inputClickCounts,
-      [inputId]: (stateRef.current.inputClickCounts[inputId] ?? 0) + 1,
-    };
-
-    await api.logEvent({
-      sessionId: sessionId!,
+    const latest = useSessionStore.getState();
+    void logSessionEvent(runtime, {
       event: 'click',
       value: {
         inputId,
         inputName: inputConfig.name,
         inputType: inputConfig.type,
-        clicks: updatedClicks,
-        totalClicks: stateRef.current.totalClicks + 1,
+        clicks: latest.inputClickCounts,
+        totalClicks: latest.totalClicks,
         awardedCents,
-        moneyCounter: moneyCounter + awardedCents,
-        moneyLimitReached,
-        timeLimitReached,
+        moneyCounter: latest.moneyCounter,
+        moneyLimitReached: latest.moneyLimitReached,
+        timeLimitReached: latest.timeLimitReached,
         codWithheld,
-        codPending: useSessionStore.getState().pendingRewards[inputId] ?? 0,
+        codPending: latest.pendingRewards[inputId] ?? 0,
       },
     });
 
+    if (latest.moneyLimitReached && !config.continueAfterMoneyLimit) {
+      void finishSession('money');
+    }
+
     // Pause trigger: count this response toward the configured threshold
-    if (config.pauseEnabled && !moneyLimitReached && !timeLimitReached) {
+    if (config.pauseEnabled && !latest.moneyLimitReached && !latest.timeLimitReached) {
       const trigger = config.pauseTrigger ?? 'rewarded';
       const qualifies = trigger === 'any' || (trigger === 'rewarded' && awardedCents > 0);
       if (qualifies) {
@@ -401,40 +565,40 @@ export function Session() {
         }
       }
     }
-  }, [config, sessionId, sessionActive, moneyCounter, moneyLimitReached, timeLimitReached, isPaused,
+  }, [config, ownsRuntime, logSessionEvent, finishSession,
     incrementClick, incrementInterval, getRewardTarget, resetInterval, deliverReward, bankReward, consumePendingReward]);
 
-  // External input handler — wraps handleInputActivation for physical inputs
-  const handleExternalInput = useCallback(async (inputId: string) => {
-    await handleInputActivation(inputId);
-  }, [handleInputActivation]);
-
   // Physical inputs for the external input hook
-  const physicalInputs = config?.inputs.filter(i => i.type !== 'screen') ?? [];
+  const physicalInputs = useMemo(() => config?.inputs.filter(i => i.type !== 'screen') ?? [], [config]);
 
   useExternalInput({
     inputs: physicalInputs,
-    onInput: handleExternalInput,
-    enabled: !isPaused && (sessionActive || (config?.continueAfterMoneyLimit === true && moneyLimitReached)),
+    onInput: handleInputActivation,
+    enabled: !isPaused && sessionActive && !runtimeRef.current?.ending && !runtimeRef.current?.failed,
+    tracking: !error && !sequenceComplete && (Boolean(runId) || !runtimeRef.current?.ending),
+    boundaryKey: runId ? sessionId : undefined,
   });
 
   // ---- Manual-resume listener while paused ----
   useEffect(() => {
     if (!isPaused) return;
     if (!config || (config.pauseResumeMode ?? 'auto') !== 'manual') return;
+    const runtime = runtimeRef.current;
+    if (!runtime || !ownsRuntime(runtime) || config.sessionId !== runtime.sessionId) return;
 
     const binding = config.pauseResumeBinding ?? { type: 'any' as const };
 
     // Guard against double-fire
     let fired = false;
     const resumeOnce = () => {
-      if (fired) return;
+      if (fired || !ownsRuntime(runtime) || runtime.ending || runtime.failed) return;
       fired = true;
       resumeSession();
     };
 
     // Keyboard listener
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (runId && e.repeat) return;
       if (binding.type === 'any') {
         e.preventDefault();
         resumeOnce();
@@ -511,7 +675,7 @@ export function Session() {
       window.removeEventListener('keydown', handleKeyDown);
       if (rafId !== null) cancelAnimationFrame(rafId);
     };
-  }, [isPaused, config, resumeSession]);
+  }, [isPaused, config, resumeSession, runId, ownsRuntime]);
 
   const getButtonStyle = (input: InputConfig) => {
     const baseStyle: React.CSSProperties = {
@@ -538,21 +702,17 @@ export function Session() {
     );
   }
 
+
   if (error || !config) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
-        <p className="text-destructive">{error || 'Session not found'}</p>
-        <button
-          onClick={() => navigate('/')}
-          className="text-primary hover:underline"
-        >
-          Return to Home
-        </button>
+        <p role="alert" className="text-destructive">{error || 'Session not found'}</p>
+        <Button variant="link" onClick={() => navigate('/')}>Return to Home</Button>
       </div>
     );
   }
 
-  const isDisabled = isPaused || (!sessionActive && !(config.continueAfterMoneyLimit && moneyLimitReached));
+  const isDisabled = sequenceComplete || isPaused || !sessionActive || runtimeRef.current?.ending || runtimeRef.current?.failed;
   const screenInputs = config.inputs.filter(i => i.type === 'screen' && i.shape !== 'none');
   const showMoney = config.showMoneyToParticipant !== false;
 
@@ -564,13 +724,15 @@ export function Session() {
       : resumeBinding.inputLabel ?? 'the assigned input';
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-20 relative">
+    <div role="group" aria-label="Participant apparatus" className="flex flex-col items-center justify-center min-h-[70vh] space-y-20 relative">
       {/* Money Display (hidden when configured for participant) */}
       {showMoney && (
         <div className="text-center">
-          <div className="text-7xl font-bold text-primary animate-in">
-            {formatMoney(moneyCounter)} / {formatMoney(config.moneyLimit)}
-          </div>
+          <output aria-label="Balance" aria-live="off" className="block text-7xl font-bold text-primary animate-in">
+            {runId
+              ? formatMoney(sequenceComplete ? sequenceBalance : sequenceBalance + moneyCounter - config.startingMoney)
+              : `${formatMoney(moneyCounter)} / ${formatMoney(config.moneyLimit)}`}
+          </output>
         </div>
       )}
 
@@ -585,7 +747,8 @@ export function Session() {
             className={cn(
               'text-white font-semibold shadow-lg transition-all',
               'hover:scale-110 active:scale-95',
-              'disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100',
+              'disabled:hover:scale-100',
+              !runId && 'disabled:opacity-50 disabled:cursor-not-allowed',
               'focus:outline-none focus:ring-4 focus:ring-primary/50',
               lastActivatedInput === input.id && 'scale-110'
             )}
@@ -597,7 +760,7 @@ export function Session() {
 
       {/* Session Message */}
       {sessionMessage && (
-        <div className="bg-accent/20 border border-accent text-accent-foreground px-6 py-3 rounded-lg animate-in">
+        <div className={runId ? 'text-muted-foreground' : 'bg-accent/20 border border-accent text-accent-foreground px-6 py-3 rounded-lg animate-in'}>
           {sessionMessage}
         </div>
       )}

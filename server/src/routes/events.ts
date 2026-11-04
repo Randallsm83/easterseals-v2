@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { statements } from '../db/index.js';
+import { runInTransaction, statements } from '../db/index.js';
+import { RewardCentsSchema, sequenceWriteConflict, type SequenceRunMember } from '../db/sequenceRuns.js';
 import { emit } from '../live/sessionEmitter.js';
 import { z } from 'zod';
 
@@ -8,7 +9,7 @@ const router = Router();
 // Log event schema
 const LogEventSchema = z.object({
   sessionId: z.string(),
-  event: z.enum(['start', 'end', 'click', 'pause', 'resume']),
+  event: z.enum(['start', 'click', 'pause', 'resume']),
   value: z.record(z.any()),
   timestamp: z.string().datetime().optional(),
 });
@@ -29,19 +30,37 @@ router.post('/', (req, res) => {
     const { sessionId, event, value } = result.data;
     const timestamp = result.data.timestamp || new Date().toISOString();
 
-    // Verify session exists
-    const session = statements.getSession.get(sessionId);
-    if (!session) {
-      res.status(404).json({ error: 'Session not found' });
+    const saved = runInTransaction(() => {
+      const session = statements.getSession.get(sessionId) as { endedAt: string | null } | undefined;
+      if (!session) return { status: 404, error: 'Session not found' } as const;
+      if (session.endedAt !== null || statements.getSessionEventByType.get(sessionId, 'end')) {
+        return { status: 409, error: 'Session already ended' } as const;
+      }
+
+      const member = statements.getSequenceRunMember.get(sessionId) as SequenceRunMember | undefined;
+      const conflict = sequenceWriteConflict(member, event);
+      if (conflict) return { status: 409, error: conflict } as const;
+      let awardedCents = 0;
+      if (member && event === 'click') {
+        const reward = RewardCentsSchema.safeParse(value.awardedCents);
+        if (!reward.success) return { status: 400, error: 'Invalid awardedCents for sequence response' } as const;
+        const sequenceBalance = RewardCentsSchema.parse(member.sequenceBalance);
+        if (!Number.isSafeInteger(sequenceBalance + reward.data)) {
+          return { status: 400, error: 'Sequence balance exceeds safe integer cents' } as const;
+        }
+        awardedCents = reward.data;
+      }
+
+      statements.insertEvent.run(sessionId, event, JSON.stringify(value), timestamp);
+      if (member && event === 'click') statements.addSequenceRunReward.run(awardedCents, member.runId);
+      if (member && event === 'start') statements.updateSessionStart.run(timestamp, sessionId);
+      return { status: 201 } as const;
+    });
+
+    if (saved.status !== 201) {
+      res.status(saved.status).json({ error: saved.error });
       return;
     }
-
-    statements.insertEvent.run(
-      sessionId,
-      event,
-      JSON.stringify(value),
-      timestamp
-    );
 
     // Broadcast to any live SSE listeners
     emit(sessionId, { type: event, sessionId, timestamp, data: value });

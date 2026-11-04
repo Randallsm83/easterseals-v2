@@ -42,7 +42,7 @@ npm run lint --workspace=server
 npm run type-check --workspace=client
 ```
 
-No test suite exists in this project.
+Browser/API regression tests use Playwright against real Express and a temporary SQLite database. Run `npm test`; setup and focused commands are documented in `DEVELOPMENT.md` under "Regression tests".
 
 ## Architecture
 
@@ -62,7 +62,7 @@ npm workspaces with `client/` (React SPA) and `server/` (Express API). In produc
 
 **SSE stream** (`GET /api/sessions/:sessionId/stream`): sends an initial snapshot of existing events on connect, then streams live events via `sessionEmitter`. Heartbeat every 25s. Header `X-Accel-Buffering: no` disables nginx buffering.
 
-**Event types**: `start`, `click`, `end`, `pause`, `resume`. The `LogEventSchema` in `routes/events.ts` and the `LiveEvent.type` union in `live/sessionEmitter.ts` must stay in sync when adding new event kinds.
+**Event types**: stored and streamed events include `start`, `click`, `end`, `pause`, and `resume`. `LogEventSchema` in `routes/events.ts` accepts only `start`, `click`, `pause`, and `resume`; the dedicated completion endpoint records and streams `end` atomically. Keep new event kinds aligned with the relevant write schema and `LiveEvent.type`.
 
 **Event log shape**: events stored as JSON strings in `session_event_log.value`. Click events have two legacy formats + the current format; `normalizeClickValue()` in `sessions.ts` handles all three.
 
@@ -125,7 +125,7 @@ Source references: `client/src/types/index.ts (28-49)`, `server/src/types/index.
 The Zustand store in `client/src/stores/useSessionStore.ts` resets *all* session-scoped flags (`moneyLimitReached`, `timeLimitReached`, `sessionActive`, plus per-input counters and `pendingRewards`) inside `setConfig` and `resetSession`. This must stay in place — without it, a flag from a previously completed session in the same browser tab will leak into the next session and prevent rewards from firing, and a banked changeover-delay reward would pay out in the wrong session. `Session.tsx` likewise clears `lastActivationAtRef` before `startSession()`.
 
 ### Logging end events
-`handleMoneyLimitEnd` and `handleTimeLimitEnd` in `Session.tsx` read the final state from `useSessionStore.getState()` (not the React closure) when emitting the `end` event — the awarding click that hits the money limit mutates the store synchronously but React closure values are still stale at that point.
+`finishSession` in `Session.tsx` captures final counters from `useSessionStore.getState()` before awaiting all accepted event writes, including the response that triggers a money-limit ending. Only then does `api.endSession` submit the snapshot and condition timestamp. The server atomically records `end` and `endedAt`, then broadcasts SSE; do not restore separate `api.logEvent({ event: 'end' })` writes. A synchronous ending latch blocks input and duplicate endings; any failed write stops participation without claiming success. Shutdown from an old pending write must not stop a different session that has since replaced the global store.
 
 ### Active-time analytics
 `client/src/lib/activeTime.ts` owns historical pause-exclusion math. `buildActiveTimeline(startMs, endMs, pauseEvents)` pairs `pause`/`resume` rows into clamped intervals and returns `pausedMs`, `activeMs`, and `activeMsAt(atMs)`. It tolerates duplicate pauses, orphan resumes, unparseable timestamps, and a trailing unclosed pause closed at `endMs`. Analytics and Session Comparison consume it; do not duplicate this math.
@@ -137,7 +137,7 @@ The Zustand store in `client/src/stores/useSessionStore.ts` resets *all* session
 Analytics and Session Comparison expose an `Active Time` / `Wall Clock` toggle (default `active`) that drives timeline x-axes and both response-rate bases. `ChartDataPoint` carries `timeElapsed` and `activeElapsed`, CSV exports both columns, and `responsesPerMinute()` is the shared rate helper.
 
 ### Auto-resume timer closure
-`pauseSession` arms its auto-resume `setTimeout` while `isPaused` is still `false`, so it must call `resumeSessionRef.current()` rather than `resumeSession` directly — a directly captured closure hits `resumeSession`'s own `if (!isPaused) return` guard and the session never resumes. This is the same stale-closure pattern as `handleTimeLimitEndRef` and `pauseSessionRef`; keep the ref indirection for any callback invoked from a timer in this file.
+Timers invoke the latest callbacks through `resumeSessionRef`, `handleTimeLimitEndRef`, and `pauseSessionRef`. Pause guards and the ending latch are checked synchronously through refs so stale callbacks cannot resume a stopped session. Keep the ref indirection when changing timer-driven callbacks.
 
 ### Deployment
 

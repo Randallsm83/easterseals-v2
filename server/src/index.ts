@@ -4,6 +4,8 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { initializeDatabase } from './db/index.js';
 import configurationsRouter from './routes/configurations.js';
+import sequencesRouter from './routes/sequences.js';
+import sequenceRunsRouter from './routes/sequenceRuns.js';
 import sessionsRouter from './routes/sessions.js';
 import eventsRouter from './routes/events.js';
 import participantsRouter from './routes/participants.js';
@@ -40,6 +42,8 @@ app.get(['/health', '/api/health'], (_req, res) => {
 
 // API routes
 app.use('/api/configurations', configurationsRouter);
+app.use('/api/sequences', sequencesRouter);
+app.use('/api/sequence-runs', sequenceRunsRouter);
 app.use('/api/sessions', sessionsRouter);
 app.use('/api/events', eventsRouter);
 app.use('/api/participants', participantsRouter);

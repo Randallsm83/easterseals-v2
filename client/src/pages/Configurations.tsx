@@ -5,7 +5,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../co
 import { Button } from '../components/ui/button';
 import { api } from '../lib/api';
 import type { Configuration, SessionListItem, RawStoredConfig } from '../types';
-import { formatTimestamp } from '../lib/utils';
+import { formatTimestamp, formatSessionStatus } from '../lib/utils';
 import { normalizeConfig } from '../lib/normalizeConfig';
 import { formatRewardScheduleSummary } from '../lib/rewardSchedules';
 
@@ -25,17 +25,18 @@ function ConfigSessionsList({ configId }: { configId: string }) {
 
   return (
     <div className="space-y-1 max-h-48 overflow-y-auto">
-      {sessions.map((s) => (
-        <Link
-          key={s.sessionId}
-          to={`/analytics/${s.sessionId}`}
-          className="flex items-center justify-between text-xs px-2 py-1.5 rounded hover:bg-muted/50 transition-colors group"
-        >
-          <span className="font-mono text-muted-foreground group-hover:text-foreground">{s.sessionId}</span>
-          <span className="text-muted-foreground">
-            {s.startedAt ? formatTimestamp(s.startedAt) : '—'}
-          </span>
-        </Link>
+      {sessions.map(session => (
+        <div key={session.sessionId} className="flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded hover:bg-muted/50">
+          {session.sequenceStatus === 'planned' ? (
+            <span className="font-mono text-muted-foreground">{session.sessionId}</span>
+          ) : (
+            <Link to={`/analytics/${session.sessionId}`} className="font-mono text-muted-foreground hover:text-foreground">
+              {session.sessionId}
+            </Link>
+          )}
+          <span className="text-muted-foreground">{session.startedAt ? formatTimestamp(session.startedAt) : '—'}</span>
+          <span className="text-muted-foreground">{formatSessionStatus(session)}</span>
+        </div>
       ))}
     </div>
   );

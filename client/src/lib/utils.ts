@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import type { SessionListItem } from '../types';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -28,6 +29,13 @@ export function parseSqliteDate(timestamp: string): Date {
 export function formatTimestamp(timestamp: string): string {
   const date = parseSqliteDate(timestamp);
   return date.toLocaleString();
+}
+
+export function formatSessionStatus(session: Pick<SessionListItem, 'sequenceStatus' | 'endedAt'>): string {
+  if (session.sequenceStatus) {
+    return { planned: 'Planned', active: 'Active', completed: 'Completed', interrupted: 'Interrupted' }[session.sequenceStatus];
+  }
+  return session.endedAt ? 'Completed' : 'Active';
 }
 
 export function responsesPerMinute(responses: number, durationSeconds: number): number {

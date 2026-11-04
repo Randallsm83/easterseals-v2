@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { statements } from '../db/index.js';
+import { sequenceMetadata } from '../db/sequenceRuns.js';
+import type { SequenceSessionMetadata } from '../types/index.js';
 
 interface ParticipantRow {
   participantId: string;
@@ -8,12 +10,12 @@ interface ParticipantRow {
   isArchived?: number;
 }
 
-interface SessionRow {
+interface SessionRow extends SequenceSessionMetadata {
   sessionId: string;
   participantId: string;
   configId: string;
   configName: string;
-  startedAt: string;
+  startedAt: string | null;
   endedAt: string | null;
 }
 
@@ -82,6 +84,7 @@ router.get('/:participantId/sessions', (req, res) => {
         configName: session.configName,
         startedAt: session.startedAt,
         endedAt: session.endedAt,
+        ...sequenceMetadata(session),
         totalClicks: clickCount.count,
         duration,
         finalMoney,

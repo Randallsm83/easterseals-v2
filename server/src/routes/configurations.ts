@@ -1,9 +1,19 @@
 import { Router } from 'express';
-import { statements } from '../db/index.js';
-import { SessionConfigSchema, LegacySessionConfigSchema } from '../types/index.js';
+import { runInTransaction, statements } from '../db/index.js';
+import { sequenceMetadata } from '../db/sequenceRuns.js';
+import { SessionConfigSchema, LegacySessionConfigSchema, type SequenceSessionMetadata } from '../types/index.js';
 import { z } from 'zod';
 
 const router = Router();
+
+interface ConfigSessionRow extends SequenceSessionMetadata {
+  sessionId: string;
+  participantId: string;
+  configId: string;
+  configName: string;
+  startedAt: string | null;
+  endedAt: string | null;
+}
 
 // Accept either new or legacy config format
 const AnyConfigSchema = z.union([SessionConfigSchema, LegacySessionConfigSchema]);
@@ -153,13 +163,33 @@ router.delete('/:configId', (req, res) => {
   try {
     const { configId } = req.params;
     
-    const config = statements.getConfig.get(configId);
-    if (!config) {
+    const result = runInTransaction(() => {
+      if (!statements.getConfig.get(configId)) return { status: 404 } as const;
+
+      const sequences = statements.getSequencesByConfig.all(configId) as { sequenceId: string; name: string }[];
+      const runs = statements.getSequenceRunsByConfig.all(configId) as { runId: string; sequenceId: string; sequenceName: string }[];
+      if (sequences.length > 0 || runs.length > 0) return { status: 409, sequences, runs } as const;
+
+      statements.deleteConfig.run(configId);
+      return { status: 200 } as const;
+    });
+
+    if (result.status === 404) {
       res.status(404).json({ error: 'Configuration not found' });
       return;
     }
-
-    statements.deleteConfig.run(configId);
+    if (result.status === 409) {
+      const names = result.sequences.map(sequence => JSON.stringify(sequence.name)).join(', ');
+      const runNames = result.runs.map(run => JSON.stringify(run.sequenceName)).join(', ');
+      res.status(409).json({
+        error: result.runs.length > 0
+          ? `Configuration is retained by recorded sequence runs: ${runNames}. Run configurations cannot be deleted.`
+          : `Configuration is used by saved session sequences: ${names}. Remove its entries from those sequences or delete those sequences before deleting this configuration.`,
+        sequences: result.sequences,
+        runs: result.runs,
+      });
+      return;
+    }
     
     res.json({ message: 'Configuration deleted successfully' });
   } catch (error) {
@@ -172,8 +202,16 @@ router.delete('/:configId', (req, res) => {
 router.get('/:configId/sessions', (req, res) => {
   try {
     const { configId } = req.params;
-    const sessions = statements.getSessionsByConfig.all(configId);
-    res.json(sessions);
+    const sessions = statements.getSessionsByConfig.all(configId) as ConfigSessionRow[];
+    res.json(sessions.map(session => ({
+      sessionId: session.sessionId,
+      participantId: session.participantId,
+      configId: session.configId,
+      configName: session.configName,
+      startedAt: session.startedAt,
+      endedAt: session.endedAt,
+      ...sequenceMetadata(session),
+    })));
   } catch (error) {
     console.error('Error fetching sessions:', error);
     res.status(500).json({ error: 'Failed to fetch sessions' });
