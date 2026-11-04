@@ -220,3 +220,87 @@ test('query-only participant navigation retires the old run before a fresh post-
   expect(await readEvents(request, app.apiURL, oldRun.entries[1].sessionId)).toEqual([]);
   expect(await readRun(request, app.apiURL, fresh.runId)).toMatchObject({ status: 'completed', currentPosition: 1, sequenceBalance: 500 });
 });
+
+test('researcher history opens a post-deployment run and preserves saved results across direct reopen and reload', async ({ page, request, app, staticApp }) => {
+  const run = await launchRun(request, app.apiURL, [500, 5000, 500]);
+  expect(staticApp.generatedRunIds).not.toContain(run.runId);
+  const [completed, partial, planned] = run.entries;
+  expect(new Set(run.entries.map(entry => entry.sessionId)).size).toBe(3);
+  const click = {
+    inputId: 'reward', inputName: 'Reward', totalClicks: 1, clicks: { reward: 1 },
+    moneyCounter: 500, awardedCents: 300,
+  };
+  for (const [sessionId, event, timestamp, value] of [
+    [completed.sessionId, 'start', '2026-11-04T10:00:00.000Z', { moneyCounter: 200 }],
+    [completed.sessionId, 'click', '2026-11-04T10:00:01.000Z', click],
+    [completed.sessionId, 'end', '2026-11-04T10:00:02.000Z', {
+      moneyCounter: 500, totalClicks: 1, clicks: { reward: 1 }, moneyLimitReached: true, timeLimitReached: false,
+      pendingRewards: { reward: 0 },
+    }],
+    [partial.sessionId, 'start', '2026-11-04T10:01:00.000Z', { moneyCounter: 200 }],
+    [partial.sessionId, 'click', '2026-11-04T10:01:01.000Z', click],
+  ] as const) {
+    const response = event === 'end'
+      ? await request.post(`${app.apiURL}/sessions/${sessionId}/end`, { data: { timestamp, value } })
+      : await request.post(`${app.apiURL}/events`, { data: { sessionId, event, timestamp, value } });
+    expect(response.status()).toBe(event === 'end' ? 200 : 201);
+  }
+  expect((await request.delete(`${app.apiURL}/sequences/${run.sequenceId}`)).status()).toBe(200);
+  const savedRun = await readRun(request, app.apiURL, run.runId);
+  expect(savedRun).toMatchObject({ status: 'running', currentPosition: 1, sequenceBalance: 800 });
+  const savedData = await Promise.all(run.entries.map(entry => readData(request, app.apiURL, entry.sessionId)));
+  expect(savedData[0].endEvent.value).toMatchObject({ moneyCounter: 500, totalClicks: 1, moneyLimitReached: true });
+  expect(savedData[1].allClicks).toHaveLength(1);
+  expect(savedData[1].endEvent).toBeNull();
+  expect(savedData[2].startEvent).toBeNull();
+  const savedEvents = await Promise.all(run.entries.map(entry => readEvents(request, app.apiURL, entry.sessionId)));
+  expect(savedEvents.map(events => events.map(event => event.event))).toEqual([['start', 'click', 'end'], ['start', 'click'], []]);
+
+  expect((await page.goto(`${staticApp.url}/sequence-history`))?.status()).toBe(200);
+  await expect(page.getByRole('heading', { name: 'Sequence Runs', exact: true })).toBeVisible();
+  const historyRow = page.getByRole('table', { name: 'Sequence runs', exact: true }).getByRole('row').filter({ hasText: run.runId });
+  await expect(historyRow.getByText(run.sequenceName, { exact: true })).toBeVisible();
+  await expect(historyRow.getByText(run.participantId, { exact: true })).toBeVisible();
+  const historyLink = historyRow.getByRole('link', { name: run.runId, exact: true });
+  const href = await historyLink.getAttribute('href');
+  expect(href).not.toBeNull();
+  const url = new URL(href!, staticApp.url).href;
+  await historyLink.click();
+  await expect(page).toHaveURL(url);
+
+  for (const visit of ['list link', 'new document', 'reload']) {
+    if (visit === 'new document') {
+      await page.goto('about:blank');
+      expect((await page.goto(url))?.status()).toBe(200);
+    } else if (visit === 'reload') {
+      expect((await page.reload())?.status()).toBe(200);
+    }
+    await expect(page.getByRole('heading', { name: run.sequenceName, exact: true })).toBeVisible();
+    await expect(page.getByText(run.participantId, { exact: true })).toBeVisible();
+    await expect(page.getByText(run.sequenceId, { exact: true })).toBeVisible();
+    await expect(page.getByText(run.runId, { exact: true })).toBeVisible();
+    await expect(page.getByText('Running', { exact: true })).toBeVisible();
+    const rows = page.getByRole('table', { name: 'Run sessions', exact: true }).locator('tbody').getByRole('row');
+    await expect(rows).toHaveCount(3);
+    for (const [index, entry] of run.entries.entries()) {
+      const row = rows.nth(index);
+      await expect(row.getByRole('rowheader')).toHaveText(String(index + 1));
+      await expect(row.getByRole('cell').filter({ hasText: entry.sessionId }).first()).toBeVisible();
+      await expect(row.getByText(entry.configName, { exact: true })).toBeVisible();
+      await expect(row.getByText(['Completed', 'Active', 'Planned'][index], { exact: true })).toBeVisible();
+      if (entry.sessionId === planned.sessionId) {
+        await expect(row.getByRole('link', { name: `Analytics for ${entry.sessionId}`, exact: true })).toHaveCount(0);
+      } else {
+        await expect(row.getByRole('link', { name: `Analytics for ${entry.sessionId}`, exact: true })).toHaveAttribute('href', `/analytics/${entry.sessionId}`);
+      }
+    }
+    await expect(page.getByRole('button', { name: 'Click Me', exact: true })).toBeHidden();
+    expect(await readRun(request, app.apiURL, run.runId)).toEqual(savedRun);
+    expect(await Promise.all(run.entries.map(entry => readData(request, app.apiURL, entry.sessionId)))).toEqual(savedData);
+    expect(await Promise.all(run.entries.map(entry => readEvents(request, app.apiURL, entry.sessionId)))).toEqual(savedEvents);
+  }
+  for (const query of ['', '?runId=']) {
+    expect((await page.goto(`${staticApp.url}/sequence-history/run${query}`))?.status()).toBe(200);
+    await expect(page.getByRole('alert')).toContainText('Missing sequence run ID');
+  }
+});

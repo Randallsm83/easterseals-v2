@@ -122,9 +122,16 @@ Completed runs stay completed when reopened. Interrupted runs retain completed s
 
 History is read-only: viewing results does not open or resume the participant apparatus. Status is the last persisted state, not a new abandonment detector. Historical run references continue protecting source configurations and constituent sessions from deletion.
 
-Sequence work is **unreleased**; deployment remains a separate step.
+Run details use `/sequence-history/run?runId=...`. Keep the `runId` query parameter when sharing or bookmarking results.
 
 ## Unreleased
+
+### Researcher run-detail routing
+
+- Replaced per-run researcher paths with a fixed `/sequence-history/run?runId=...` entry point generated before any run exists. Newly created runs support direct open and refresh without another deployment.
+- Missing run IDs show a clear error. Result viewing remains read-only and preserves completed, active, and planned records.
+
+Local verification: all 78 browser/API/isolated-SQLite regression tests passed, along with workspace, explicit client application, and strict test-source typechecks, lint, and production builds. An observed browser smoke verified direct open, refresh, ordered retained results, frozen individual analytics, and missing-ID errors against the generated static frontend without an SPA wildcard. Run, session-data, and event records stayed unchanged. Verification used only temporary isolated data; no push or deployment was performed.
 
 ### Sequence review corrections (#55)
 
