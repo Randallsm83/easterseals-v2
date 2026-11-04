@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file provides guidance to WARP (warp.dev) when working with code in this repository.
+Guidance for agents working in this repository. Source code takes precedence if documentation drifts.
 
 ## Project Purpose
 
@@ -48,13 +48,13 @@ Browser/API regression tests use Playwright against real Express and a temporary
 
 ### Monorepo Structure
 
-npm workspaces with `client/` (React SPA) and `server/` (Express API). In production, the server serves client static files from `client/dist/` and handles all routing; in dev they run independently.
+npm workspaces contain `client/` (React SPA) and `server/` (Express API), running independently in development. DreamHost serves the deployed frontend from `~/es2.randall.codes/` and proxies `/api` to the API on port 8080. Express can also serve `client/dist/` with a non-API SPA fallback when started in production mode.
 
 ### Server (`server/src/`)
 
-- `index.ts` — Express app setup, CORS (dev: open, prod: `es2.randall.codes`), route mounting, static file serving in prod
+- `index.ts` — Express app setup, route mounting, optional production static serving, and CORS (open in development; production allows `https://es2.randall.codes` and `https://api.es2.randall.codes`)
 - `db/index.ts` — Single Better-SQLite3 instance, `initializeDatabase()` creates tables + runs migrations, exports a `statements` object of prepared statements (used directly by route handlers)
-- `routes/` — Four Express routers: `configurations`, `sessions`, `events`, `participants`
+- `routes/` — Express routers: `configurations`, `sequences`, `sequenceRuns`, `sessions`, `events`, and `participants`
 - `types/index.ts` — Zod schemas are the source of truth; TypeScript types are all derived via `z.infer<...>`
 - `live/sessionEmitter.ts` — In-memory pub/sub (`Map<sessionId, Set<Callback>>`) powering SSE live monitoring
 
@@ -77,8 +77,17 @@ npm workspaces with `client/` (React SPA) and `server/` (Express API). In produc
 - `lib/rewardSchedules.ts` — Shared reward schedule helpers. It owns interval sanitation, variable interval generation, point-schedule averaging/balancing, runtime target selection, and display labels. Use these helpers instead of duplicating reward math in pages or stores.
 - `lib/useExternalInput.ts` — Hook handling keyboard (`keydown` → `event.code` match) and gamepad (RAF polling with edge detection). Gamepad input codes are formatted as `gp-{gpIndex}-btn-{btnIndex}` or `gp-{gpIndex}-axis-{axisIndex}-{pos|neg}`.
 - `stores/useSessionStore.ts` — Zustand store tracking live session state: per-input click and interval counters, reward targets/sequences, banked changeover-delay rewards, money, and limit flags
-- `pages/` — One file per route; `Session.tsx` is the active session runner, `Analytics.tsx` handles per-session and aggregate views, `LiveSession.tsx` consumes SSE
+- `pages/` — `Session.tsx` runs standalone sessions and sequence conditions; `SequenceRunHistory.tsx` and `SequenceRunDetail.tsx` provide read-only results; `Analytics.tsx` handles per-session and aggregate views; `LiveSession.tsx` consumes SSE
 - `types/index.ts` — Client-side type definitions mirroring server types (kept manually in sync; not auto-generated)
+
+### Session sequences and run results
+
+Before changing sequence persistence, transitions, interruption, or result retrieval, read [Sequence runs](DEVELOPMENT.md#sequence-runs).
+
+- Participant `/sequence-run?runId=...` mounts the session runner. Researcher `/sequence-history` and `/sequence-history/run?runId=...` remain read-only and never mount participation. Keep these entry points separate (`client/src/App.tsx (103-109)`).
+- Both run entry paths have unconditional static fallbacks; run identity belongs in the query string, not deployment-time run-ID enumeration (`client/scripts/generate-spa-fallbacks.mjs (4-15)`).
+- Researcher details retain a keyed per-run state boundary and cancel stale request updates. Missing or empty IDs show an error without fetching the collection (`client/src/pages/SequenceRunDetail.tsx (9-36)`).
+- Launched conditions and session membership are frozen. Repeated configurations retain distinct session records; planned entries are not active results. Use the retained run rather than mutable setup data when displaying historical conditions.
 
 ### Data Model
 
@@ -132,7 +141,7 @@ The Zustand store in `client/src/stores/useSessionStore.ts` resets *all* session
 
 `LiveSession.tsx` tracks streaming pause/resume events with refs rather than `buildActiveTimeline`. The current SSE snapshot has no prior pause history, so a monitor opened or reconnected after a pause cannot reconstruct that earlier paused duration; its active-time figure is authoritative only for pause events observed while connected.
 
-`GET /api/sessions/:sessionId/data` returns ordered `pauseEvents: { event, timestamp }[]` via `getPauseResumeEvents`. Do not use `getSessionEventByType` for this because it ends in `LIMIT 1`. Duration math must stay inside `session_event_log`, whose API-written timestamps are ISO-8601 UTC with milliseconds; `sessions.startedAt` uses SQLite `CURRENT_TIMESTAMP` while `sessions.endedAt` is an ISO string.
+`GET /api/sessions/:sessionId/data` returns ordered `pauseEvents: { event, timestamp }[]` via `getPauseResumeEvents`. Do not use `getSessionEventByType` for this because it ends in `LIMIT 1`. Duration math must stay inside `session_event_log`, using its ISO-8601 event timestamps. Standalone `sessions.startedAt` defaults to SQLite `CURRENT_TIMESTAMP`; planned run sessions start with `NULL` and receive the accepted start event's ISO timestamp. Session endings use ISO timestamps (`server/src/db/index.ts (378-387)`, `server/src/routes/events.ts (54-56)`).
 
 Analytics and Session Comparison expose an `Active Time` / `Wall Clock` toggle (default `active`) that drives timeline x-axes and both response-rate bases. `ChartDataPoint` carries `timeElapsed` and `activeElapsed`, CSV exports both columns, and `responsesPerMinute()` is the shared rate helper.
 
@@ -146,10 +155,12 @@ Timers invoke the latest callbacks through `resumeSessionRef`, `handleTimeLimitE
 - DreamHost panel proxies `/api` → `localhost:8080`
 - SQLite DB lives at `server/data/easterseals.db` (auto-created; not committed)
 - Deployment script must fail fast. Keep `set -e` and the `git fetch --prune origin main` + `git reset --hard origin/main` pair so a blocked or diverged checkout cannot produce a green-but-stale deployment.
-- `client/scripts/generate-spa-fallbacks.mjs` copies `index.html` into static route directories and, in production deploys, also creates fallbacks for existing sessions/configurations returned by the API.
+- `client/scripts/generate-spa-fallbacks.mjs` always generates the fixed participant and researcher run entry paths. API-enabled deployment additionally generates ID-based fallbacks for existing sessions/configurations; it does not enumerate sequence-run IDs.
 - `client/vite.config.ts` explicitly allows both the current workspace path and its native real path for dev serving. This avoids Vite file-serving failures when a Windows checkout path resolves through another drive.
+- Current deployed release and verification summary: [Latest Release](README.md#latest-release). Publishing `main` deploys production; distinguish local validation from a completed deployment.
+- Keep production verification read-only. Use temporary SQLite databases and isolated frontends for synthetic participant/researcher workflows; preserve verified database and compiled-artifact rollback copies before release.
 
-Deployment source references: `.github/workflows/deploy.yml (19-30)`, `client/scripts/generate-spa-fallbacks.mjs (4-63)`, `client/vite.config.ts (7-29)`.
+Deployment source references: `.github/workflows/deploy.yml (19-30)`, `client/scripts/generate-spa-fallbacks.mjs (4-67)`, `client/vite.config.ts (7-29)`.
 
 ## Server Import Convention
 
@@ -159,3 +170,17 @@ The server uses ESM (`"type": "module"`). All internal imports **must include th
 import { statements } from '../db/index.js';   // ✓
 import { statements } from '../db/index';       // ✗
 ```
+
+## Agent skills
+
+### Issue tracker
+
+Track issues and specs in GitHub Issues for `Randallsm83/easterseals-v2`. Read `docs/agents/issue-tracker.md` before tracker operations.
+
+### Triage labels
+
+Use the five default triage labels. Read `docs/agents/triage-labels.md` before classifying issues.
+
+### Domain docs
+
+Use a single-context layout. Read `docs/agents/domain.md` before domain exploration or documentation changes.
