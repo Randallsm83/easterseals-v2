@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useSessionStore } from '../stores/useSessionStore';
 import { api } from '../lib/api';
 import { normalizeSessionConfig } from '../lib/normalizeConfig';
@@ -29,7 +29,10 @@ function formatMoney(cents: number): string {
 }
 
 export function Session() {
-  const { sessionId: routeSessionId, runId } = useParams<{ sessionId: string; runId: string }>();
+  const { sessionId: routeSessionId } = useParams<{ sessionId: string }>();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const runId = routeSessionId ? undefined : searchParams.get('runId') || undefined;
   const navigate = useNavigate();
   const {
     config,
@@ -50,7 +53,9 @@ export function Session() {
   } = useSessionStore();
 
   const sessionId = config?.sessionId;
-  const routeKey = runId ? `run:${runId}` : `session:${routeSessionId ?? ''}`;
+  const routeKey = runId
+    ? `run:${runId}:${location.pathname}${location.search}`
+    : `session:${routeSessionId ?? ''}`;
   const routeKeyRef = useRef(routeKey);
   routeKeyRef.current = routeKey;
   const runtimeRef = useRef<SessionRuntime | null>(null);
@@ -115,7 +120,6 @@ export function Session() {
     if (!ownsRuntime(runtime)) return;
     endSession();
     clearSessionTimers();
-    audioRef.current?.pause();
     isPausedRef.current = false;
     responseCountSincePauseRef.current = 0;
     lastActivationAtRef.current = {};
@@ -131,6 +135,7 @@ export function Session() {
     const message = cause instanceof Error ? cause.message : 'Request failed';
     const stoppedMessage = `${runtime.runId ? 'Sequence' : 'Session'} stopped because data could not be saved. ${message}`;
     if (ownsRuntime(runtime)) {
+      audioRef.current?.pause();
       stopSessionActivity(runtime);
       setSessionMessage('');
       setError(stoppedMessage);

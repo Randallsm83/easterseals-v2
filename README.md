@@ -109,6 +109,8 @@ A failed write stops participation without retrying or advancing. The runner att
 
 Closing, reloading, or navigating away from an active participant runner stops that run rather than resuming, replaying, or skipping conditions. The browser attempts to save interruption immediately. If that request is lost, reopening the participant URL checks saved participation and marks the run interrupted before allowing any input. Until that check reaches the API, history can still show the last saved status. A failed interruption save is disclosed; it is not presented as confirmed interruption.
 
+The participant URL uses the fixed path `/sequence-run?runId=…`. Keep the run ID in the query string when sharing or bookmarking it. Its static entry point exists before any run is launched, so new runs can be reloaded or reopened without another deployment.
+
 Completed runs stay completed when reopened. Interrupted runs retain completed sessions and already saved partial responses, without fabricating a session ending or a time/money-limit reason. Responses that never reached storage cannot be recovered. For further participation, return to **Session Sequences** and deliberately launch a new run with the participant ID; this creates separate records and leaves the interrupted run unchanged.
 
 ### Review sequence run results
@@ -123,6 +125,19 @@ History is read-only: viewing results does not open or resume the participant ap
 Sequence work is **unreleased**; deployment remains a separate step.
 
 ## Unreleased
+
+### Sequence review corrections (#55)
+
+- Prevented a delayed launch acknowledgement from navigating back into participation after the researcher leaves the launch form.
+- Preserved configured reward audio at normal completion while retaining playback cancellation on failure or abandonment.
+- Reconciled normalized response identities with frozen legacy configurations while preserving nested and flat legacy records, without rewriting historical events or changing research accounting.
+- Replaced per-run participant paths with a fixed static entry point and query-based run identity, supporting reload/reopen for runs created after deployment.
+
+Local verification: all 77 browser/API/isolated-SQLite regression tests passed. Workspace, explicit client application, and strict test-source typechecks, lint, and production builds passed. Routing tests served the generated production frontend without an SPA wildcard and launched runs after fallback generation.
+
+An observed participant/researcher smoke used that static topology: left-rewarded → right-rewarded → left-rewarded conditions rejected the wrong button in every condition, preserved independent session accounting, accumulated only earned sequence rewards, and completed all three native reward sounds. Completed participant reload remained unchanged. Frozen legacy analytics retained 100% accuracy after source edits and setup deletion, with keyboard comparison and configuration-deletion protection exercised. Separate standards and specification reviews of the complete feature against `7832326` reported no remaining findings.
+
+No push or deployment was performed. Physical gamepad hardware and actual BFCache restoration remain unverified. Existing Browserslist freshness and bundle-size warnings remain.
 
 ### Ordered sequence run results (#60)
 

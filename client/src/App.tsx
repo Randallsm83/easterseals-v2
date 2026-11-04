@@ -106,7 +106,7 @@ function App() {
             <Route path="/config/:configId/edit" element={<ConfigurationSetup />} />
             <Route path="/start/:configId" element={<StartSession />} />
             <Route path="/session/:sessionId" element={<Session />} />
-            <Route path="/sequence-runs/:runId" element={<Session />} />
+            <Route path="/sequence-run" element={<Session />} />
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/analytics/:sessionId" element={<Analytics />} />
             <Route path="/config/:configId/sessions" element={<Analytics />} />

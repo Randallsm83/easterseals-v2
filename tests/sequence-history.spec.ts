@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { test, expect } from './fixtures';
 import type { APIRequestContext, Page } from '@playwright/test';
-import type { BaseConfig, InputConfig, SequenceRun, SessionDataResponse } from '../client/src/types';
+import type { BaseConfig, InputConfig, LegacyBaseConfig, SequenceRun, SessionConfigExtended, SessionDataResponse } from '../client/src/types';
 
 const leftInput: InputConfig = {
   id: 'left', name: 'Left', type: 'screen', shape: 'rectangle', color: '#2563eb',
@@ -498,4 +498,183 @@ test('history caps comparison at five started entries and comparison URLs discar
   expect(await readData(request, app.apiURL, run.entries[6].sessionId)).toMatchObject({
     sequenceStatus: 'planned', startEvent: null, endEvent: null, allClicks: [],
   });
+});
+
+test('legacy frozen conditions reconcile current and original button IDs in analytics and comparison', async ({ page, request, app }) => {
+  const configId = `legacy-history-${randomUUID()}`;
+  const legacyConfig: LegacyBaseConfig = {
+    timeLimit: 20, moneyLimit: 10000, startingMoney: 0, continueAfterMoneyLimit: false,
+    moneyAwarded: 500, awardInterval: 1, playAwardSound: false, buttonActive: 'left',
+    leftButton: { shape: 'rectangle', color: '#2563eb' },
+    middleButton: { shape: 'circle', color: '#e39400' },
+    rightButton: { shape: 'circle', color: '#00a3cc' },
+  };
+  expect((await request.post(`${app.apiURL}/configurations`, {
+    data: { configId, name: 'Frozen legacy left', config: legacyConfig },
+  })).status()).toBe(201);
+  const run = await launchRun(request, app.apiURL, 'Legacy identity history', [configId]);
+  const currentId = run.entries[0].sessionId;
+  await recordEvents(request, app.apiURL, currentId, [
+    ['start', '2026-11-03T10:00:00.000Z', { moneyCounter: 0, moneyLimitReached: false, timeLimitReached: false }],
+    ['click', '2026-11-03T10:00:05.000Z', { inputId: 'screen-left', inputName: 'Left', totalClicks: 1, clicks: { 'screen-left': 1, 'screen-middle': 0, 'screen-right': 0 }, moneyCounter: 500, awardedCents: 500 }],
+    ['pause', '2026-11-03T10:00:06.000Z', {}],
+    ['resume', '2026-11-03T10:00:11.000Z', {}],
+    ['end', '2026-11-03T10:00:20.000Z', { moneyCounter: 500, moneyLimitReached: false, timeLimitReached: true, totalClicks: 1, clicks: { 'screen-left': 1, 'screen-middle': 0, 'screen-right': 0 }, pendingRewards: { 'screen-left': 0, 'screen-middle': 0, 'screen-right': 0 } }],
+  ]);
+  const frozenData = await readData(request, app.apiURL, currentId);
+  expect(frozenData).toMatchObject({
+    sessionConfig: legacyConfig,
+    allClicks: [{ inputId: 'screen-left', buttonClicked: 'screen-left', sessionInfo: { moneyCounter: 500 }, clickInfo: { total: 1, awardedCents: 500 } }],
+  });
+  expect((await request.put(`${app.apiURL}/configurations/${configId}`, {
+    data: { name: 'Edited legacy right', config: { ...legacyConfig, buttonActive: 'right', moneyAwarded: 2000, startingMoney: 1000, timeLimit: 99 } },
+  })).status()).toBe(200);
+  expect(await readData(request, app.apiURL, currentId)).toEqual(frozenData);
+
+  const originalConfigId = `original-legacy-${randomUUID()}`;
+  expect((await request.post(`${app.apiURL}/configurations`, {
+    data: { configId: originalConfigId, name: 'Original legacy left', config: { ...legacyConfig, startingMoney: 700, moneyAwarded: 100, timeLimit: 45 } },
+  })).status()).toBe(201);
+  const originalSession = await request.post(`${app.apiURL}/sessions/start`, {
+    data: { participantId: run.participantId, configId: originalConfigId },
+  });
+  expect(originalSession.status()).toBe(201);
+  const { sessionId: originalId } = await originalSession.json() as { sessionId: string };
+  await recordEvents(request, app.apiURL, originalId, [
+    ['start', '2026-11-03T10:01:00.000Z', { moneyCounter: 700, moneyLimitReached: false, timeLimitReached: false }],
+    ['click', '2026-11-03T10:01:05.000Z', { buttonClicked: 'left', clicks: { total: 1, left: 1, middle: 0, right: 0 }, pointsCounter: 800, awardedPoints: 100 }],
+    ['pause', '2026-11-03T10:01:10.000Z', {}],
+    ['resume', '2026-11-03T10:01:25.000Z', {}],
+    ['click', '2026-11-03T10:01:30.000Z', { buttonClicked: 'right', clicks: { total: 2, left: 1, middle: 0, right: 1 }, pointsCounter: 800, awardedPoints: 0 }],
+    ['click', '2026-11-03T10:01:40.000Z', { buttonClicked: 'left', clicks: { total: 3, left: 2, middle: 0, right: 1 }, pointsCounter: 900, awardedPoints: 100 }],
+    ['end', '2026-11-03T10:01:45.000Z', { moneyCounter: 900, moneyLimitReached: false, timeLimitReached: true, totalClicks: 3, clicks: { left: 2, middle: 0, right: 1 }, pendingRewards: { left: 0, middle: 0, right: 0 } }],
+  ]);
+  const originalData = await readData(request, app.apiURL, originalId);
+  expect(originalData.allClicks).toMatchObject([
+    { buttonClicked: 'left', clickInfo: { left: 1, right: 0, total: 1, awardedCents: 100 }, sessionInfo: { moneyCounter: 800 } },
+    { buttonClicked: 'right', clickInfo: { left: 1, right: 1, total: 2, awardedCents: 0 }, sessionInfo: { moneyCounter: 800 } },
+    { buttonClicked: 'left', clickInfo: { left: 2, right: 1, total: 3, awardedCents: 100 }, sessionInfo: { moneyCounter: 900 } },
+  ]);
+
+  for (const expected of [
+    { sessionId: currentId, clicks: '1', left: '1', accuracy: '100%', money: '$5.00', starting: '$0.00', duration: '20s', active: '15s', paused: '5s', points: 1,
+      csvRows: ['5,5,left,1,1,0,0,500'] },
+    { sessionId: originalId, clicks: '3', left: '2', accuracy: '66.7%', money: '$9.00', starting: '$7.00', duration: '45s', active: '30s', paused: '15s', points: 3,
+      csvRows: ['5,5,left,1,1,0,0,800', '30,15,right,2,1,0,1,800', '40,25,left,3,2,0,1,900'] },
+  ]) {
+    await page.goto(`/analytics/${expected.sessionId}`);
+    await expectAnalyticsMetric(page, 'Total Clicks', expected.clicks);
+    await expectAnalyticsMetric(page, 'Accuracy', expected.accuracy);
+    await expectAnalyticsMetric(page, 'Rewarded Input', 'Left');
+    await expectAnalyticsMetric(page, 'Money Earned', expected.money);
+    await expectAnalyticsMetric(page, 'Starting Money', expected.starting);
+    await expectAnalyticsMetric(page, 'Duration', expected.duration);
+    await expectAnalyticsMetric(page, 'Active Time', expected.active);
+    await expectAnalyticsMetric(page, 'Paused', expected.paused);
+    const distribution = page.getByText('Click Distribution', { exact: true }).locator('../..');
+    const left = distribution.getByText('left Button', { exact: true }).locator('..');
+    await expect(left.getByText(expected.left, { exact: true })).toBeVisible();
+    await expect(left.getByText('5s', { exact: true })).toBeVisible();
+    for (const title of ['Click Timeline - Individual Buttons', 'Click Timeline - Total Clicks']) {
+      const chart = page.getByText(title, { exact: true }).locator('../..');
+      await chart.scrollIntoViewIfNeeded();
+      await expect(chart.locator('.recharts-scatter-symbol circle')).toHaveCount(expected.points);
+    }
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Export CSV', exact: true }).click();
+    const download = await downloadPromise;
+    const stream = await download.createReadStream();
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+    expect(Buffer.concat(chunks).toString('utf8').split('\n')).toEqual([
+      'Time (s),Active Time (s),Button,Total Clicks,Left,Middle,Right,Money (cents)',
+      ...expected.csvRows,
+    ]);
+  }
+
+  const query = new URLSearchParams({ participantId: run.participantId });
+  query.append('sessionId', currentId);
+  query.append('sessionId', originalId);
+  await page.goto(`/compare?${query}`);
+  await expect(page.getByText('2 / 5 selected', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Compare 2 Sessions', exact: true }).click();
+  await expectComparisonMetric(page, 'Total Clicks', ['1', '3']);
+  await expectComparisonMetric(page, 'Correct Clicks', ['1', '2']);
+  await expectComparisonMetric(page, 'Accuracy', ['100%', '67%']);
+  await expectComparisonMetric(page, 'Money Earned', ['$5.00', '$9.00']);
+  await expectComparisonMetric(page, 'Duration', ['20s', '45s']);
+  await expectComparisonMetric(page, 'Active Time', ['15s', '30s']);
+  await expectComparisonMetric(page, 'Paused', ['5s', '15s']);
+  await expectComparisonMetric(page, 'Responses / min (active)', ['4.00', '6.00']);
+  await expectComparisonMetric(page, 'Responses / min (wall)', ['3.00', '4.00']);
+  await page.getByRole('button', { name: 'Wall Clock', exact: true }).click();
+  await expectComparisonMetric(page, 'Correct Clicks', ['1', '2']);
+  await expectComparisonMetric(page, 'Money Earned', ['$5.00', '$9.00']);
+  await expectComparisonMetric(page, 'Active Time', ['15s', '30s']);
+  await expectComparisonMetric(page, 'Duration', ['20s', '45s']);
+  expect(await readData(request, app.apiURL, currentId)).toEqual(frozenData);
+  expect(await readData(request, app.apiURL, originalId)).toEqual(originalData);
+});
+
+test('flat legacy session analytics retain original button accuracy without converting stored conditions', async ({ page, request, app }) => {
+  const configuration = await createConfiguration(request, app.apiURL, 'Flat legacy history');
+  const flatConfig: SessionConfigExtended = {
+    timeLimit: 20, moneyLimit: 10000, startingMoney: 700, continueAfterMoneyLimit: false,
+    moneyAwarded: 100, awardInterval: 1, playAwardSound: false, buttonActive: 'left',
+    leftButtonShape: 'rectangle', leftButtonColor: '#2563eb',
+    middleButtonShape: 'circle', middleButtonColor: '#e39400',
+    rightButtonShape: 'circle', rightButtonColor: '#00a3cc',
+  };
+  expect((await request.put(`${app.apiURL}/configurations/${configuration.configId}`, {
+    data: { name: configuration.name, config: flatConfig },
+  })).status()).toBe(200);
+  const participantId = `flat-legacy-${randomUUID()}`;
+  const sessions: { sessionId: string; data: SessionDataResponse }[] = [];
+  while (sessions.length < 2) {
+    const started = await request.post(`${app.apiURL}/sessions/start`, {
+      data: { participantId, configId: configuration.configId },
+    });
+    expect(started.status()).toBe(201);
+    const { sessionId, config } = await started.json();
+    expect(config).toEqual(flatConfig);
+    await recordEvents(request, app.apiURL, sessionId, [
+      ['start', '2026-11-03T14:00:00.000Z', { moneyCounter: 700, moneyLimitReached: false, timeLimitReached: false }],
+      ['click', '2026-11-03T14:00:05.000Z', { buttonClicked: 'left', clicks: { total: 1, left: 1, middle: 0, right: 0 }, pointsCounter: 800, awardedPoints: 100 }],
+      ['click', '2026-11-03T14:00:10.000Z', { buttonClicked: 'right', clicks: { total: 2, left: 1, middle: 0, right: 1 }, pointsCounter: 800, awardedPoints: 0 }],
+      ['click', '2026-11-03T14:00:15.000Z', { buttonClicked: 'left', clicks: { total: 3, left: 2, middle: 0, right: 1 }, pointsCounter: 900, awardedPoints: 100 }],
+      ['end', '2026-11-03T14:00:20.000Z', { moneyCounter: 900, moneyLimitReached: false, timeLimitReached: true, totalClicks: 3, clicks: { left: 2, middle: 0, right: 1 }, pendingRewards: { left: 0, middle: 0, right: 0 } }],
+    ]);
+    const data = await readData(request, app.apiURL, sessionId);
+    expect(data.sessionConfig).toEqual(flatConfig);
+    expect(data.sessionConfig.inputs).toBeUndefined();
+    expect(data.allClicks).toMatchObject([
+      { buttonClicked: 'left', clickInfo: { total: 1, left: 1, right: 0 }, sessionInfo: { moneyCounter: 800 } },
+      { buttonClicked: 'right', clickInfo: { total: 2, left: 1, right: 1 }, sessionInfo: { moneyCounter: 800 } },
+      { buttonClicked: 'left', clickInfo: { total: 3, left: 2, right: 1 }, sessionInfo: { moneyCounter: 900 } },
+    ]);
+    sessions.push({ sessionId, data });
+  }
+
+  await page.goto(`/analytics/${sessions[0].sessionId}`);
+  await expectAnalyticsMetric(page, 'Total Clicks', '3');
+  await expectAnalyticsMetric(page, 'Accuracy', '66.7%');
+  await expectAnalyticsMetric(page, 'Money Earned', '$9.00');
+  await expectAnalyticsMetric(page, 'Starting Money', '$7.00');
+  const distribution = page.getByText('Click Distribution', { exact: true }).locator('../..');
+  await expect(distribution.getByText('left Button', { exact: true }).locator('..').getByText('2', { exact: true })).toBeVisible();
+  await expect(distribution.getByText('right Button', { exact: true }).locator('..').getByText('1', { exact: true })).toBeVisible();
+
+  const query = new URLSearchParams({ participantId });
+  for (const { sessionId } of sessions) query.append('sessionId', sessionId);
+  await page.goto(`/compare?${query}`);
+  await expect(page.getByText('2 / 5 selected', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Compare 2 Sessions', exact: true }).click();
+  await expectComparisonMetric(page, 'Total Clicks', ['3', '3']);
+  await expectComparisonMetric(page, 'Correct Clicks', ['2', '2']);
+  await expectComparisonMetric(page, 'Accuracy', ['67%', '67%']);
+  await expectComparisonMetric(page, 'Money Earned', ['$9.00', '$9.00']);
+  for (const { sessionId, data } of sessions) expect(await readData(request, app.apiURL, sessionId)).toEqual(data);
+  const stored = await request.get(`${app.apiURL}/configurations/${configuration.configId}`);
+  expect(stored.status()).toBe(200);
+  expect(JSON.parse((await stored.json()).config)).toEqual(flatConfig);
 });

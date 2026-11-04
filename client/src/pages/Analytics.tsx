@@ -16,7 +16,7 @@ import { Button } from '../components/ui/button';
 import { api } from '../lib/api';
 import type { SessionDataResponse, SessionListItem, ChartDataPoint, ButtonPosition, Participant, ButtonShape, RawStoredConfig } from '../types';
 import { calculateAccuracy, formatDuration, parseSqliteDate, formatTimestamp, formatSessionStatus, responsesPerMinute } from '../lib/utils';
-import { normalizeConfig } from '../lib/normalizeConfig';
+import { normalizeConfig, normalizeRecordedInputId } from '../lib/normalizeConfig';
 import { formatRewardScheduleLabel, formatRewardScheduleSummary } from '../lib/rewardSchedules';
 import { buildActiveTimeline } from '../lib/activeTime';
 
@@ -241,9 +241,21 @@ export function Analytics() {
     return sessionData.allClicks.map((click) => {
       const clickTime = parseSqliteDate(click.timestamp).getTime();
       const timeElapsed = (clickTime - timeline.startMs) / 1000;
+      const raw = click as unknown as Record<string, unknown>;
+      const buttonClicked = normalizeRecordedInputId(rawConfig, (raw.inputId ?? click.buttonClicked) as string) as ButtonPosition;
+      totalCount++;
+      if (buttonClicked === 'left') leftCount++;
+      else if (buttonClicked === 'middle') middleCount++;
+      else if (buttonClicked === 'right') rightCount++;
       const hasNewFormat = click.clickInfo?.left !== undefined && click.clickInfo?.total !== undefined;
 
       if (hasNewFormat) {
+        if (raw.inputId === undefined) {
+          leftCount = click.clickInfo.left;
+          middleCount = click.clickInfo.middle;
+          rightCount = click.clickInfo.right;
+        }
+        totalCount = click.clickInfo.total;
         const sessionMoney = (click.sessionInfo as { moneyCounter?: number; pointsCounter?: number })?.moneyCounter
           ?? (click.sessionInfo as { moneyCounter?: number; pointsCounter?: number })?.pointsCounter
           ?? 0;
@@ -251,21 +263,16 @@ export function Analytics() {
           timeElapsed: Number(timeElapsed.toFixed(2)),
           activeElapsed: Number((timeline.activeMsAt(clickTime) / 1000).toFixed(2)),
           timestamp: click.timestamp,
-          left: click.clickInfo?.left ?? 0,
-          middle: click.clickInfo?.middle ?? 0,
-          right: click.clickInfo?.right ?? 0,
-          total: click.clickInfo?.total ?? 0,
+          left: leftCount,
+          middle: middleCount,
+          right: rightCount,
+          total: totalCount,
           money: sessionMoney,
-          buttonClicked: click.buttonClicked,
+          buttonClicked,
         };
       }
 
-      totalCount++;
-      if (click.buttonClicked === 'left') leftCount++;
-      else if (click.buttonClicked === 'middle') middleCount++;
-      else if (click.buttonClicked === 'right') rightCount++;
-
-      if (click.buttonClicked === activeButton) {
+      if (buttonClicked === activeButton) {
         correctClicksSinceLastAward++;
         if (correctClicksSinceLastAward >= awardInterval) {
           moneyCounter += moneyAwarded;
@@ -282,7 +289,7 @@ export function Analytics() {
         right: rightCount,
         total: totalCount,
         money: moneyCounter,
-        buttonClicked: click.buttonClicked,
+        buttonClicked,
       };
     });
   }, [sessionData, timeline]);
@@ -299,19 +306,16 @@ export function Analytics() {
     const rpmWall = responsesPerMinute(totalClicks, duration);
 
     const rawConfig = sessionData.sessionConfig as unknown as RawStoredConfig;
-    let correctClicks: number;
-    if (Array.isArray(rawConfig.inputs)) {
-      const normalizedConf = normalizeConfig(rawConfig);
-      const rewardedIds = new Set(normalizedConf.inputs.filter(i => i.isRewarded).map(i => i.id));
-      correctClicks = sessionData.allClicks.filter(c => {
-        const raw = c as unknown as Record<string, unknown>;
-        return rewardedIds.has((raw.inputId ?? c.buttonClicked) as string);
-      }).length;
-    } else {
-      correctClicks = sessionData.allClicks.filter(
-        (c) => c.buttonClicked === sessionData.sessionConfig.buttonActive
-      ).length;
+    const normalizedConf = normalizeConfig(rawConfig);
+    const rewardedIds = new Set(normalizedConf.inputs.filter(i => i.isRewarded)
+      .map(i => normalizeRecordedInputId(rawConfig, i.id)));
+    if (!Array.isArray(rawConfig.inputs) && rawConfig.leftButton == null && rawConfig.buttonActive) {
+      rewardedIds.add(rawConfig.buttonActive);
     }
+    const correctClicks = sessionData.allClicks.filter(c => {
+      const raw = c as unknown as Record<string, unknown>;
+      return rewardedIds.has(normalizeRecordedInputId(rawConfig, (raw.inputId ?? c.buttonClicked) as string));
+    }).length;
 
     let finalMoney: number | undefined;
     if (sessionData.endEvent?.value?.moneyCounter !== undefined) {
@@ -399,7 +403,10 @@ export function Analytics() {
       right: { firstClickTime: null, timeToFirstClick: null, totalClicks: 0, codWithheld: 0 },
     };
     for (const button of buttons) {
-      const buttonClicks = sessionData.allClicks.filter(c => c.buttonClicked === button);
+      const buttonClicks = sessionData.allClicks.filter(c => {
+        const raw = c as unknown as Record<string, unknown>;
+        return normalizeRecordedInputId(rawConfig, (raw.inputId ?? c.buttonClicked) as string) === button;
+      });
       result[button].totalClicks = buttonClicks.length;
       if (buttonClicks.length > 0) {
         const t = parseSqliteDate(buttonClicks[0].timestamp);

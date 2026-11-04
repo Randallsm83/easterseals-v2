@@ -30,13 +30,16 @@ export function SessionSequences() {
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
   const [status, setStatus] = useState('');
+  const mountedRef = useRef(false);
   const nextEntryKey = useRef(0);
   const configurationSelect = useRef<HTMLSelectElement>(null);
   const removeButtons = useRef(new Map<number, HTMLButtonElement>());
   const busy = saving || launching || deletingId !== null;
 
   useEffect(() => {
+    mountedRef.current = true;
     loadData();
+    return () => { mountedRef.current = false; };
   }, []);
 
   async function loadData() {
@@ -165,8 +168,10 @@ export function SessionSequences() {
     setLaunchError(null);
     try {
       const run = await api.startSequenceRun(launchSequence.sequenceId, participant);
-      navigate(`/sequence-runs/${run.runId}`);
+      if (!mountedRef.current) return;
+      navigate(`/sequence-run?runId=${encodeURIComponent(run.runId)}`);
     } catch (error) {
+      if (!mountedRef.current) return;
       setLaunchError(error instanceof Error ? error.message : 'Failed to start sequence.');
       setLaunching(false);
     }

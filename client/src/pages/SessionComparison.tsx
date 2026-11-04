@@ -14,7 +14,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../co
 import { Button } from '../components/ui/button';
 import { api } from '../lib/api';
 import type { Participant, SessionListItem, SessionDataResponse, RawStoredConfig } from '../types';
-import { normalizeConfig } from '../lib/normalizeConfig';
+import { normalizeConfig, normalizeRecordedInputId } from '../lib/normalizeConfig';
 import { buildActiveTimeline } from '../lib/activeTime';
 import { parseSqliteDate, formatTimestamp, formatSessionStatus, formatDuration, responsesPerMinute } from '../lib/utils';
 
@@ -128,7 +128,11 @@ export function SessionComparison() {
         const color = COMPARISON_PALETTE[i % COMPARISON_PALETTE.length];
         const rawCfg = data.sessionConfig as unknown as RawStoredConfig;
         const normalizedCfg = normalizeConfig(rawCfg);
-        const rewardedIds = new Set(normalizedCfg.inputs.filter(inp => inp.isRewarded).map(inp => inp.id));
+        const rewardedIds = new Set(normalizedCfg.inputs.filter(inp => inp.isRewarded)
+          .map(inp => normalizeRecordedInputId(rawCfg, inp.id)));
+        if (!Array.isArray(rawCfg.inputs) && rawCfg.leftButton == null && rawCfg.buttonActive) {
+          rewardedIds.add(rawCfg.buttonActive);
+        }
 
         if (!data.startEvent) {
           return {
@@ -155,7 +159,7 @@ export function SessionComparison() {
         const totalClicks = data.allClicks.length;
         const correctClicks = data.allClicks.filter((c) => {
           const raw = c as unknown as Record<string, unknown>;
-          return rewardedIds.has((raw.inputId ?? c.buttonClicked) as string);
+          return rewardedIds.has(normalizeRecordedInputId(rawCfg, (raw.inputId ?? c.buttonClicked) as string));
         }).length;
         const accuracy = totalClicks > 0 ? Math.round((correctClicks / totalClicks) * 100) : 0;
         const rpmWall = responsesPerMinute(totalClicks, duration);

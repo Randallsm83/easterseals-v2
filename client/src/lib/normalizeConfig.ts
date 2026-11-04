@@ -10,6 +10,16 @@ function isLegacyConfig(raw: RawStoredConfig): boolean {
   return !Array.isArray(raw.inputs) && raw.leftButton != null;
 }
 
+export function normalizeRecordedInputId(raw: RawStoredConfig, inputId: string): string {
+  // Legacy configs retain position names even when the current runner logs screen IDs.
+  if (isLegacyConfig(raw)) {
+    if (inputId === 'screen-left') return 'left';
+    if (inputId === 'screen-middle') return 'middle';
+    if (inputId === 'screen-right') return 'right';
+  }
+  return inputId;
+}
+
 function normalizeInput(input: InputConfig): InputConfig {
   const rewardIntervals = sanitizeRewardIntervals(input.rewardIntervals);
   return {

@@ -71,7 +71,7 @@ function eventResponse(page: Page, apiURL: string, sessionId: string, event: str
 
 async function openRun(page: Page, apiURL: string, run: SequenceRun) {
   const started = eventResponse(page, apiURL, run.entries[0].sessionId, 'start');
-  await page.goto(`/sequence-runs/${run.runId}`);
+  await page.goto(`/sequence-run?runId=${encodeURIComponent(run.runId)}`);
   expect((await started).status()).toBe(201);
   await expect(page.getByRole('group', { name: 'Participant apparatus', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Click Me', exact: true })).toBeEnabled();
@@ -106,7 +106,7 @@ test('researcher launches saved conditions once and participant keeps only earne
   const launch = await launched;
   expect(launch.status()).toBe(201);
   const run = await launch.json() as SequenceRun;
-  await expect(page).toHaveURL(`/sequence-runs/${run.runId}`);
+  await expect(page).toHaveURL(`/sequence-run?runId=${encodeURIComponent(run.runId)}`);
   const button = page.getByRole('button', { name: 'Click Me', exact: true });
   await expect(button).toBeEnabled();
   await expect(page.getByLabel('Balance', { exact: true })).toHaveText('$2.00');
@@ -704,17 +704,27 @@ test('a planned sequence member cannot participate through the standalone sessio
   expect((await readRun(request, app.apiURL, run.runId)).entries[1].startedAt).toBeNull();
 });
 
-test('closing and reopening recognizes abandonment even when unload interruption never reaches the API', async ({ page, context, request, app }) => {
+test('closing and reopening recovers a rejected keepalive exit fetch without replay', async ({ page, context, request, app }) => {
   const a = await createConfiguration(request, app.apiURL, 'Reload partial condition', { moneyLimit: 5000 });
   const run = await launchRun(request, app.apiURL, [a.configId, a.configId]);
   await openRun(page, app.apiURL, run);
   await clickAndSave(page, app.apiURL, run.entries[0].sessionId);
   const saved = await readData(request, app.apiURL, run.entries[0].sessionId);
-  await page.route(`${app.apiURL}/sequence-runs/${run.runId}/interrupt`, route => route.abort());
+  const interruptURL = `${app.apiURL}/sequence-runs/${run.runId}/interrupt`;
+  // Chromium can bypass page routing for keepalive; fail only that fetch at the transport boundary.
+  await page.evaluate(interruptURL => {
+    const fetch = window.fetch.bind(window);
+    window.fetch = (input, init) => input === interruptURL && init?.keepalive
+      ? Promise.reject(new TypeError('Failed to fetch'))
+      : fetch(input, init);
+  }, interruptURL);
   await page.close();
   expect((await readRun(request, app.apiURL, run.runId)).status).toBe('running');
   const reopenedPage = await context.newPage();
-  await reopenedPage.goto(`/sequence-runs/${run.runId}`);
+  const reentryInterruption = reopenedPage.waitForResponse(response =>
+    response.url() === interruptURL && response.request().method() === 'POST');
+  await reopenedPage.goto(`/sequence-run?runId=${encodeURIComponent(run.runId)}`);
+  expect((await reentryInterruption).status()).toBe(200);
   await expect(reopenedPage.getByRole('alert')).toContainText(/interrupted/i);
   const interrupted = await readRun(request, app.apiURL, run.runId);
   expect(interrupted).toMatchObject({ status: 'interrupted', currentPosition: 0, sequenceBalance: 500 });
@@ -810,7 +820,7 @@ for (const boundary of ['click acknowledgement', 'end request', 'end acknowledge
       const fresh = await launchRun(request, app.apiURL, [b.configId, b.configId]);
       // SPA navigation keeps the old pending callback alive in the same document.
       await page.evaluate(runId => {
-        window.history.pushState({}, '', `/sequence-runs/${runId}`);
+        window.history.pushState({}, '', `/sequence-run?runId=${encodeURIComponent(runId)}`);
         window.dispatchEvent(new PopStateEvent('popstate'));
       }, fresh.runId);
       await expect(page.getByRole('button', { name: 'Click Me', exact: true })).toBeEnabled();
@@ -860,7 +870,7 @@ test('completed run survives navigation before final acknowledgement, late inter
     await (await acknowledged).finished();
     expect((await request.post(`${app.apiURL}/sequence-runs/${run.runId}/interrupt`)).status()).toBe(200);
     for (let visit = 0; visit < 2; visit++) {
-      await page.goto(`/sequence-runs/${run.runId}`);
+      await page.goto(`/sequence-run?runId=${encodeURIComponent(run.runId)}`);
       await expect(page.getByText('Session complete.', { exact: true })).toBeVisible();
       await attemptBlockedInputs(page);
       expect(await readRun(request, app.apiURL, run.runId)).toEqual(completed);
@@ -881,7 +891,7 @@ test('failed abandonment save is disclosed on re-entry and never permits partici
   await page.route(`${app.apiURL}/sequence-runs/${run.runId}/interrupt`, route =>
     route.fulfill({ status: 503, json: { error: 'Interruption storage unavailable' } }));
   await page.goto('about:blank');
-  await page.goto(`/sequence-runs/${run.runId}`);
+  await page.goto(`/sequence-run?runId=${encodeURIComponent(run.runId)}`);
   await expect(page.getByRole('alert')).toContainText(/could not.*interrupt|interruption.*could not|unable.*interrupt/i);
   await expect(page.getByRole('alert')).toContainText('Interruption storage unavailable');
   await attemptBlockedInputs(page);

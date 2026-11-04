@@ -5,6 +5,7 @@ const staticRoutes = [
   'participants',
   'configurations',
   'sequences',
+  'sequence-run',
   'sequence-history',
   'config/new',
   'analytics',
