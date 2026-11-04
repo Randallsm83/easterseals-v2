@@ -101,7 +101,7 @@ function App() {
             <Route path="/configurations" element={<Configurations />} />
             <Route path="/sequences" element={<SessionSequences />} />
             <Route path="/sequence-history" element={<SequenceRunHistory />} />
-            <Route path="/sequence-history/:runId" element={<SequenceRunDetail />} />
+            <Route path="/sequence-history/run" element={<SequenceRunDetail />} />
             <Route path="/config/new" element={<ConfigurationSetup />} />
             <Route path="/config/:configId/edit" element={<ConfigurationSetup />} />
             <Route path="/start/:configId" element={<StartSession />} />

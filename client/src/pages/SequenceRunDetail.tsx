@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { api } from '../lib/api';
@@ -7,18 +7,20 @@ import { formatSessionStatus, formatTimestamp } from '../lib/utils';
 import type { SequenceRun } from '../types';
 
 export function SequenceRunDetail() {
-  const { runId = '' } = useParams<{ runId: string }>();
+  const [searchParams] = useSearchParams();
+  const runId = searchParams.get('runId') || '';
   return <RunDetail key={runId} runId={runId} />;
 }
 
 function RunDetail({ runId }: { runId: string }) {
   const navigate = useNavigate();
   const [run, setRun] = useState<SequenceRun | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(Boolean(runId));
+  const [error, setError] = useState<string | null>(runId ? null : 'Missing sequence run ID.');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   useEffect(() => {
+    if (!runId) return;
     let cancelled = false;
     api.getSequenceRun(runId)
       .then(data => {

@@ -61,7 +61,7 @@ export function SequenceRunHistory() {
                   {runs.map(run => (
                     <tr key={run.runId} className="border-b last:border-0">
                       <th scope="row" className="p-3 font-mono font-normal">
-                        <Link to={`/sequence-history/${encodeURIComponent(run.runId)}`} className="text-primary underline underline-offset-4">
+                        <Link to={`/sequence-history/run?runId=${encodeURIComponent(run.runId)}`} className="text-primary underline underline-offset-4">
                           {run.runId}
                         </Link>
                       </th>

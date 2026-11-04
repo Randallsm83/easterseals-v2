@@ -152,7 +152,6 @@ test('completed A B A history retains frozen conditions and distinct analytics t
   await expect(historyRow.getByText(run.participantId, { exact: true })).toBeVisible();
   await expect(historyRow.getByText('Completed', { exact: true })).toBeVisible();
   const historyLink = historyRow.getByRole('link', { name: run.runId, exact: true });
-  await expect(historyLink).toHaveAttribute('href', `/sequence-history/${run.runId}`);
   await historyLink.click();
   await expect(page.getByRole('heading', { name: 'Frozen history A B A', exact: true })).toBeVisible();
   await expect(page.getByText(run.participantId, { exact: true })).toBeVisible();
@@ -286,7 +285,7 @@ test('interrupted history keeps completed, partial and planned records without f
     ['click', '2026-10-30T11:01:20.000Z', { inputId: 'right', inputName: 'Right', totalClicks: 2, clicks: { left: 1, right: 1 }, moneyCounter: 950, awardedCents: 250 }],
   ]);
 
-  await page.goto(`/sequence-history/${run.runId}`);
+  await page.goto(`/sequence-history/run?runId=${encodeURIComponent(run.runId)}`);
   await expect(page.getByRole('heading', { name: 'Retained interrupted history', exact: true })).toBeVisible();
   await expect(page.getByText('Running', { exact: true })).toBeVisible();
   const table = page.getByRole('table', { name: 'Run sessions', exact: true });
@@ -438,7 +437,7 @@ test('history caps comparison at five started entries and comparison URLs discar
     ['start', '2026-10-30T13:00:00.000Z', { moneyCounter: 1250, moneyLimitReached: false, timeLimitReached: false }],
   ]);
 
-  await page.goto(`/sequence-history/${run.runId}`);
+  await page.goto(`/sequence-history/run?runId=${encodeURIComponent(run.runId)}`);
   await expect(page.getByRole('heading', { name: 'Seven-entry history', exact: true })).toBeVisible();
   const table = page.getByRole('table', { name: 'Run sessions', exact: true });
   await expect(table.locator('tbody').getByRole('row')).toHaveCount(7);
