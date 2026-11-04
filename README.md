@@ -137,7 +137,30 @@ Local verification: all 77 browser/API/isolated-SQLite regression tests passed. 
 
 An observed participant/researcher smoke used that static topology: left-rewarded → right-rewarded → left-rewarded conditions rejected the wrong button in every condition, preserved independent session accounting, accumulated only earned sequence rewards, and completed all three native reward sounds. Completed participant reload remained unchanged. Frozen legacy analytics retained 100% accuracy after source edits and setup deletion, with keyboard comparison and configuration-deletion protection exercised. Separate standards and specification reviews of the complete feature against `7832326` reported no remaining findings.
 
-No push or deployment was performed. Physical gamepad hardware and actual BFCache restoration remain unverified. Existing Browserslist freshness and bundle-size warnings remain.
+No push or deployment was performed. Physical gamepad button/axis boundary checks remain unavailable; actual BFCache restoration was subsequently verified in the acceptance audit below. Existing Browserslist freshness and bundle-size warnings remain.
+
+### Per-ticket acceptance audit (#55–#60)
+
+Audited local candidate `8708358` against the parent specification and each child ticket independently, rather than treating the combined code review as acceptance of every checklist.
+
+| Ticket | Acceptance result |
+| --- | --- |
+| #55 — parent specification | All 37 user stories passed. Implementation, testing, and scope requirements were mapped separately; physical-controller smoke remains unavailable. |
+| #56 — durable completion | 8/8 acceptance criteria passed. |
+| #57 — sequence authoring | 8/8 acceptance criteria passed. |
+| #58 — frozen execution | 17/18 criteria passed; the remaining mixed criterion includes fulfilled browser-smoke/documentation requirements but unavailable physical gamepad button/axis proof. |
+| #59 — interruption | 8/8 acceptance criteria passed. |
+| #60 — retained individual results | 9/9 acceptance criteria passed. |
+
+The audit reused the existing 77-passed regression run on this candidate; it did not rerun the full suite. Fresh browser/API/isolated-database probes verified standalone completion, authoring CRUD with keyboard reorder/removal and reload persistence, future launches after source/order edits, final-condition continuation through time expiry, a close sequence time/money race with exactly one advancement, malformed later-condition rejection without partial records, and actual comparison chart values on both time bases.
+
+Actual full-Chromium BFCache restoration was observed through trusted native persisted `pagehide` and `pageshow` events for the same document. The restored runner rechecked persisted state, remained interrupted, preserved completed/partial/planned records, and accepted no resumed participation. This supersedes the earlier BFCache limitation; ordinary reload was not counted as cache-restoration proof.
+
+A separate isolated upgrade smoke initialized a populated database with the exact pre-feature `7832326` database module, then started the current server against that database. All original configuration, standalone-session, event, note, and archived-participant rows, value types/bytes, table definitions, columns, and indexes remained unchanged after initialization and a new sequence launch. Existing APIs retained the original records; integrity and foreign-key checks passed. This was a synthetic local compatibility check, not access to the production database.
+
+No product defect was demonstrated by this audit. Architecture and excluded-feature constraints were inspected in source and are not presented as runtime checks. Physical input remains a separate limitation: the browser exposed no gamepad after trusted interaction, while Windows exposed a native Razer Tartarus V2 joystick interface. No physical button/axis boundary action was performed, and simulated input is not hardware proof. No issue state, commit, push, or deployment was changed by this audit.
+
+Subsequent tracker reconciliation recorded the per-ticket acceptance evidence and local commit references, updated the checklists, and closed GitHub issues #55–#60 as **locally implemented—not deployed**. The parent [acceptance record](https://github.com/Randallsm83/easterseals-v2/issues/55#issuecomment-6625341745) includes the complete 88-row mapping and links to each child’s evidence. The parent physical-controller item and #58’s mixed final criterion remain unchecked; browser-smoke/documentation portions passed, while actual physical button/axis proof remains unavailable under #58’s explicitly permitted reporting condition. Fresh GitHub reads verified every published body, evidence comment, and closed state. This reconciliation created no commit, push, release, or deployment.
 
 ### Ordered sequence run results (#60)
 
