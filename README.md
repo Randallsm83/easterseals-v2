@@ -17,6 +17,8 @@ A modern behavioral research tracking application for studying button-click patt
 - 🌓 **Dark Mode**: Built-in theme support
 - 📱 **Responsive**: Mobile-first design
 - **Reusable Session Sequences**: Save named, ordered configuration lists, including repeated conditions, and revise them for future use
+- **Frozen Sequence Runs**: Run ordered conditions back-to-back for one participant, with continuous earned balance and separately retained session results
+- **Ordered Run History**: Review frozen conditions and persisted run states, open individual analytics, and compare two to five started sessions
 
 ## Tech Stack
 
@@ -124,7 +126,9 @@ History is read-only: viewing results does not open or resume the participant ap
 
 Run details use `/sequence-history/run?runId=...`. Keep the `runId` query parameter when sharing or bookmarking results.
 
-## Unreleased
+## Sequence implementation and verification history
+
+These records preserve pre-release implementation and acceptance checkpoints. Local-only and not-yet-deployed statements describe those checkpoints; see [Latest Release](#latest-release) for current production status.
 
 ### Researcher run-detail routing
 
@@ -218,7 +222,20 @@ Local verification: all 57 browser/API regression tests passed, along with works
 
 ## Latest Release
 
-The current production release adds pause-aware analytics, a configurable changeover delay, and configurable reward schedules for rewarded inputs, and hardens production deployment.
+Production runs [`d923308`](https://github.com/Randallsm83/easterseals-v2/commit/d923308d441de94850a4426d164c9ee59cac4339), released on 2026-11-04 at [es2.randall.codes](https://es2.randall.codes). The [production deployment succeeded](https://github.com/Randallsm83/easterseals-v2/actions/runs/41908744423), and both GitHub and GitLab mirrors match.
+
+Researcher details now use `/sequence-history/run?runId=...`. This fixed static entry point supports direct open and refresh for runs created after deployment, without enumerating run IDs. Keep the query parameter when sharing results; recreate old detail bookmarks through **Sequence Runs**, because the former per-run paths have no redirect.
+
+This follows the sequence feature release `39cb4ea`: reusable ordered setups, frozen back-to-back execution, continuous earned balance, interruption without replay, and retained individual results. Editing or deleting a reusable setup does not alter the frozen run.
+
+- Before release, all 78 browser/API/isolated-SQLite tests, typechecks, lint, and production builds passed. Valid post-generation run results were also exercised against an isolated database and generated static frontend.
+- Release verification reused that accepted evidence rather than rerunning the full suite. Live read-only browser checks covered direct open, refresh, missing IDs, and unknown-run error handling; public HTML/assets matched the deployed build, and the API and process remained healthy.
+- Production records and schema stayed unchanged; database integrity and foreign-key checks passed. Database and compiled-artifact backups were verified on-host and off-host. No production test records were created by this routing release; earlier sequence-release smoke fixtures were subsequently removed.
+- Production checks must remain read-only. Use an isolated database for synthetic participant/researcher workflows. Physical controller behavior was not exercised, and existing Browserslist freshness and bundle-size warnings remain.
+
+## Previous Release: Analytics and Reward Controls
+
+This earlier production release added pause-aware analytics, a configurable changeover delay, configurable reward schedules for rewarded inputs, and production deployment hardening.
 
 ### Active-time analysis
 
